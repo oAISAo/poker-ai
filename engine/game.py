@@ -76,7 +76,9 @@ class PokerGame:
         self.community_cards.extend(cards)
         print(f"Community cards dealt: {self.community_cards}")
 
-    def betting_round(self):
+    def betting_round(self, start=None):
+        if start is None:
+            start = (self.dealer_position + 1) % len(self.players)  # default to small blind + 1
         print("\n--- Betting round ---")
 
         active_players = [p for p in self.players if p.in_hand and not p.all_in]
@@ -93,7 +95,7 @@ class PokerGame:
             if all_acted and not unresolved_bets:
                 break
 
-            for player in self.players_in_order(start=self.dealer_position + 1):
+            for player in self.players_in_order(start=start):
                 if not player.in_hand or player.all_in or player in players_acted:
                     continue
 
@@ -101,7 +103,6 @@ class PokerGame:
 
                 print(f"Acting: {player.name}, in_hand={player.in_hand}, current_bet={player.current_bet}")
 
-                # Auto-check only for bots who posted blind and already matched current bet
                 if (
                     player.name in self.players_who_posted_blinds
                     and player.current_bet == self.current_bet
@@ -112,18 +113,20 @@ class PokerGame:
                     continue
 
                 if player.is_human:
-                    self.prompt_human_action(player, to_call)
+                    action = self.prompt_human_action(player, to_call)
                 else:
-                    self.take_ai_action(player, to_call)
+                    action = self.take_ai_action(player, to_call)  # Update take_ai_action to return action string (see note below)
 
                 players_acted.add(player)
                 self.current_bet = max(p.current_bet for p in self.players)
 
-            print(f"Current pot: {self.pot}")
-            for p in self.players:
-                print(
-                    f"{p.name}: stack={p.stack} current_bet={p.current_bet} in_hand={p.in_hand}"
-                )
+                # If the player raised, reset players_acted so others act again
+                if action == "raise":
+                    players_acted = {player}
+
+                # Update active_players because some might fold or go all-in
+                active_players = [p for p in self.players if p.in_hand and not p.all_in]
+
 
     def prompt_human_action(self, player, to_call):
         while True:
@@ -132,24 +135,34 @@ class PokerGame:
             print(f"Current pot: {self.pot}, to call: {to_call}")
             print(f"Stack: {player.stack}")
 
-            options = ["fold"]
+            options = []
+
+            bb_pos = (self.dealer_position + 2) % len(self.players)
+            is_big_blind = self.players[bb_pos] == player
+
+            # Disallow folding if player is big blind and to_call == 0 (no raise)
+            if not (is_big_blind and to_call == 0):
+                options.append("fold")
+
             if to_call == 0:
                 options.append("check")
             else:
                 options.append("call")
+
             if player.stack > to_call:
                 options.append("raise <amount>")
 
             action = input(f"Choose action {options}: ").strip().lower()
             parts = action.split()
 
-            if action == "fold":
+            if action == "fold" and "fold" in options:
                 player.in_hand = False
-                return
+                print(f"{player.name} folds")
+                return "fold"
 
             elif action == "check" and to_call == 0:
                 print(f"{player.name} checks")
-                return
+                return "check"
 
             elif action == "call" and to_call > 0:
                 if to_call > player.stack:
@@ -157,7 +170,7 @@ class PokerGame:
                 player.bet_chips(to_call)
                 self.pot += to_call
                 print(f"{player.name} calls {to_call}")
-                return
+                return "call"
 
             elif parts[0] == "raise" and len(parts) == 2 and parts[1].isdigit():
                 raise_amount = int(parts[1])
@@ -168,10 +181,41 @@ class PokerGame:
                 player.bet_chips(total_bet)
                 self.pot += total_bet
                 print(f"{player.name} raises by {raise_amount} to {player.current_bet}")
-                return
+                return "raise"
 
             print("Invalid action. Try again.")
 
+    def take_ai_action(self, player, to_call):
+        action = player.decide_action(to_call, self.community_cards)
+        print(f"{player.name} chooses to {action}")
+
+        if action == "fold":
+            player.fold()
+            self.active_players.remove(player)
+            return "fold"
+        elif action == "call":
+            if to_call > player.stack:
+                print(f"{player.name} cannot call {to_call}, folds.")
+                player.fold()
+                self.active_players.remove(player)
+                return "fold"
+            else:
+                player.bet_chips(to_call)
+                self.pot += to_call
+                return "call"
+        elif action == "check":
+            return "check"
+        elif action.startswith("raise"):
+            # You may want to parse raise amount here if AI supports it
+            print(f"{player.name} made unsupported action '{action}', folding by default.")
+            player.fold()
+            self.active_players.remove(player)
+            return "fold"
+        else:
+            print(f"{player.name} made invalid action '{action}', folding by default.")
+            player.fold()
+            self.active_players.remove(player)
+            return "fold"
 
     def all_players_equal_bet(self):
         bets = [p.current_bet for p in self.active_players if p.in_hand]
@@ -194,7 +238,7 @@ class PokerGame:
 
         print("\n--- Pre-flop ---")
         first_to_act = (self.dealer_position + 3) % len(self.players)
-        self.betting_round(first_to_act)
+        self.betting_round(start=first_to_act)
         self.players_who_posted_blinds = set()
         self.print_stacks_and_pot()
 
@@ -205,7 +249,7 @@ class PokerGame:
         print("\n--- Flop ---")
         self.deal_community_cards(3)
         self.reset_bets()
-        self.betting_round((self.dealer_position + 1) % len(self.players))
+        self.betting_round()
         self.print_stacks_and_pot()
 
         if len([p for p in self.active_players if p.in_hand]) == 1:
@@ -215,7 +259,7 @@ class PokerGame:
         print("\n--- Turn ---")
         self.deal_community_cards(1)
         self.reset_bets()
-        self.betting_round((self.dealer_position + 1) % len(self.players))
+        self.betting_round()
         self.print_stacks_and_pot()
 
         if len([p for p in self.active_players if p.in_hand]) == 1:
@@ -225,7 +269,7 @@ class PokerGame:
         print("\n--- River ---")
         self.deal_community_cards(1)
         self.reset_bets()
-        self.betting_round((self.dealer_position + 1) % len(self.players))
+        self.betting_round()
         self.print_stacks_and_pot()
 
         self.showdown()
@@ -234,6 +278,10 @@ class PokerGame:
             print(f"{p.name}: {p.stack} chips")
         print(f"{'='*30}\n")
 
+    def players_in_order(self, start):
+        num = len(self.players)
+        for i in range(num):
+            yield self.players[(start + i) % num]
 
     def reset_bets(self):
         for player in self.players:

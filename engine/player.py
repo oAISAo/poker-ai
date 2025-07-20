@@ -10,6 +10,7 @@ class Player:
         self.current_bet = 0
         self.in_hand = True  # True if player hasn't folded
         self.is_human = is_human
+        self.all_in = False  # Track if player is all-in
 
     def deal_hole_cards(self, cards):
         if len(cards) != 2:
@@ -20,6 +21,8 @@ class Player:
         actual_bet = min(self.stack, amount)
         self.stack -= actual_bet
         self.current_bet += actual_bet
+        if self.stack == 0:
+            self.all_in = True  # Player is all-in if no chips left
         if not suppress_log:
             print(f"{self.name} bets {actual_bet}. Remaining stack: {self.stack}")
         return actual_bet
@@ -32,6 +35,7 @@ class Player:
         self.hole_cards = []
         self.current_bet = 0
         self.in_hand = True
+        self.all_in = False  # Reset all-in status at the start of a new hand
 
     def decide_action(self, to_call, community_cards):
         # Simple AI logic for testing:
