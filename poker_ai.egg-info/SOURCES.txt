@@ -18,6 +18,8 @@ poker_ai.egg-info/dependency_links.txt
 poker_ai.egg-info/requires.txt
 poker_ai.egg-info/top_level.txt
 test/test_cards.py
+test/test_hand_evaluator.py
+test/test_round.py
 train/__init__.py
 train/train_agents.py
 utils/__init__.py

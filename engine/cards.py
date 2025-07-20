@@ -33,11 +33,13 @@ class Deck:
         random.shuffle(self.cards)
 
     def draw(self, n=1):
+        if n <= 0:
+            raise ValueError("Number of cards to draw must be positive")
         if n > len(self.cards):
             raise ValueError("Not enough cards left in the deck")
         drawn = self.cards[:n]
         self.cards = self.cards[n:]
-        return drawn  # always a list, even if n==1
+        return drawn
 
 
     def reset(self):

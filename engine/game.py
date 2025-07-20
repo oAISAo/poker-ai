@@ -191,53 +191,55 @@ class PokerGame:
     def play_hand(self):
         self.reset_for_new_hand()
         self.rotate_dealer()
-        print(f"\nDealer is {self.players[self.dealer_position].name}")
+        print(f"\n{'='*30}")
+        print(f"Dealer is {self.players[self.dealer_position].name}")
+        print(f"{'='*30}")
 
         self.post_blinds()
         self.deal_hole_cards()
 
-        # Pre-flop betting
+        print("\n--- Pre-flop ---")
         first_to_act = (self.dealer_position + 3) % len(self.players)
         self.betting_round(first_to_act)
-        self.players_who_posted_blinds = set()  # reset after pre-flop
-
-        self.print_stacks_and_pot()  # debug print
+        self.players_who_posted_blinds = set()
+        self.print_stacks_and_pot()
 
         if len([p for p in self.active_players if p.in_hand]) == 1:
             self.end_hand()
             return
 
-        # Flop
+        print("\n--- Flop ---")
         self.deal_community_cards(3)
         self.reset_bets()
         self.betting_round((self.dealer_position + 1) % len(self.players))
-
-        self.print_stacks_and_pot()  # debug print
-
-        if len([p for p in self.active_players if p.in_hand]) == 1:
-            self.end_hand()
-            return
-
-        # Turn
-        self.deal_community_cards(1)
-        self.reset_bets()
-        self.betting_round((self.dealer_position + 1) % len(self.players))
-
-        self.print_stacks_and_pot()  # debug print
+        self.print_stacks_and_pot()
 
         if len([p for p in self.active_players if p.in_hand]) == 1:
             self.end_hand()
             return
 
-        # River
+        print("\n--- Turn ---")
         self.deal_community_cards(1)
         self.reset_bets()
         self.betting_round((self.dealer_position + 1) % len(self.players))
+        self.print_stacks_and_pot()
 
-        self.print_stacks_and_pot()  # debug print
+        if len([p for p in self.active_players if p.in_hand]) == 1:
+            self.end_hand()
+            return
 
-        # Showdown
+        print("\n--- River ---")
+        self.deal_community_cards(1)
+        self.reset_bets()
+        self.betting_round((self.dealer_position + 1) % len(self.players))
+        self.print_stacks_and_pot()
+
         self.showdown()
+        print("\nFinal stacks:")
+        for p in self.players:
+            print(f"{p.name}: {p.stack} chips")
+        print(f"{'='*30}\n")
+
 
     def reset_bets(self):
         for player in self.players:
