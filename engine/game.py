@@ -76,107 +76,101 @@ class PokerGame:
         self.community_cards.extend(cards)
         print(f"Community cards dealt: {self.community_cards}")
 
-    def betting_round(self, starting_player_pos):
+    def betting_round(self):
         print("\n--- Betting round ---")
 
-        players_in_round = [p for p in self.active_players if p.in_hand and p.stack > 0]
-        if len(players_in_round) <= 1:
-            return
-
+        active_players = [p for p in self.players if p.in_hand and not p.all_in]
         players_acted = set()
-        pos = starting_player_pos
-        num_players = len(self.players)
+        last_raiser = None
+        self.current_bet = max(p.current_bet for p in self.players)
 
         while True:
-            player = self.players[pos]
+            all_acted = all(p in players_acted for p in active_players)
+            unresolved_bets = any(
+                p.current_bet != self.current_bet and not p.all_in for p in active_players
+            )
 
-            print(f"Acting: {player.name}, in_hand={player.in_hand}, current_bet={player.current_bet}")
-
-            if player not in self.active_players or not player.in_hand or player.stack == 0:
-                pos = (pos + 1) % num_players
-                continue
-
-            to_call = self.current_bet - player.current_bet
-
-            # If player is one of the blinds and has already matched the current bet, auto-check
-            if player.name in self.players_who_posted_blinds and player.current_bet == self.current_bet:
-                print(f"{player.name} (blind) checks")
-                players_acted.add(player)
-            else:
-                # Only ask human input if game_mode allows it (not AI_VS_AI)
-                if player.is_human and self.game_mode != GameMode.AI_VS_AI:
-                    print(f"\nYour turn, {player.name}. Your cards: {[str(c) for c in player.hole_cards]}")
-                    print(f"Community cards: {[str(c) for c in self.community_cards]}")
-                    print(f"Current pot: {self.pot}, to call: {to_call}")
-
-                    while True:
-                        try:
-                            action = input("Choose action [fold / call / check]: ").strip().lower()
-                        except EOFError:
-                            print("Input error. Defaulting to 'fold'.")
-                            action = "fold"
-
-                        if action == "fold":
-                            player.fold()
-                            self.active_players.remove(player)
-                            players_in_round.remove(player)
-                            break
-                        elif action == "call":
-                            if to_call == 0:
-                                print(f"{player.name} checks")
-                                break
-                            elif to_call > player.stack:
-                                print("You don't have enough chips to call. You fold.")
-                                player.fold()
-                                self.active_players.remove(player)
-                                players_in_round.remove(player)
-                                break
-                            else:
-                                player.bet_chips(to_call)
-                                self.pot += to_call
-                                break
-                        elif action == "check":
-                            if to_call > 0:
-                                print("You can't check; there's a bet to call.")
-                            else:
-                                print(f"{player.name} checks")
-                                break
-                        else:
-                            print("Invalid action. Please enter 'fold', 'call', or 'check'.")
-                else: 
-                    action = player.decide_action(to_call, self.community_cards)
-                    print(f"{player.name} chooses to {action}")
-
-                    if action == "fold":
-                        player.fold()
-                        self.active_players.remove(player)
-                        players_in_round.remove(player)
-                    elif action == "call":
-                        if to_call > player.stack:
-                            # Player can't call fully - fold or all-in, here we fold for simplicity
-                            print(f"{player.name} cannot call {to_call}, folds.")
-                            player.fold()
-                            self.active_players.remove(player)
-                            players_in_round.remove(player)
-                        else:
-                            player.bet_chips(to_call)
-                            self.pot += to_call
-                    elif action == "check":
-                        # no chips bet, do nothing
-                        pass
-                    else:
-                        print(f"{player.name} made invalid action '{action}', folding by default.")
-                        player.fold()
-                        self.active_players.remove(player)
-                        players_in_round.remove(player)
-
-                players_acted.add(player)
-
-            # If all active, in-hand players have acted and bets are equal, break
-            if self.all_players_equal_bet() and players_acted.issuperset(players_in_round):
+            if all_acted and not unresolved_bets:
                 break
 
-            pos = (pos + 1) % num_players
+            for player in self.players_in_order(start=self.dealer_position + 1):
+                if not player.in_hand or player.all_in or player in players_acted:
+                    continue
+
+                to_call = self.current_bet - player.current_bet
+
+                print(f"Acting: {player.name}, in_hand={player.in_hand}, current_bet={player.current_bet}")
+
+                # Auto-check only for bots who posted blind and already matched current bet
+                if (
+                    player.name in self.players_who_posted_blinds
+                    and player.current_bet == self.current_bet
+                    and not player.is_human
+                ):
+                    print(f"{player.name} (blind) checks")
+                    players_acted.add(player)
+                    continue
+
+                if player.is_human:
+                    self.prompt_human_action(player, to_call)
+                else:
+                    self.take_ai_action(player, to_call)
+
+                players_acted.add(player)
+                self.current_bet = max(p.current_bet for p in self.players)
+
+            print(f"Current pot: {self.pot}")
+            for p in self.players:
+                print(
+                    f"{p.name}: stack={p.stack} current_bet={p.current_bet} in_hand={p.in_hand}"
+                )
+
+    def prompt_human_action(self, player, to_call):
+        while True:
+            print(f"\nYour turn, {player.name}. Your cards: {player.hole_cards}")
+            print(f"Community cards: {self.community_cards}")
+            print(f"Current pot: {self.pot}, to call: {to_call}")
+            print(f"Stack: {player.stack}")
+
+            options = ["fold"]
+            if to_call == 0:
+                options.append("check")
+            else:
+                options.append("call")
+            if player.stack > to_call:
+                options.append("raise <amount>")
+
+            action = input(f"Choose action {options}: ").strip().lower()
+            parts = action.split()
+
+            if action == "fold":
+                player.in_hand = False
+                return
+
+            elif action == "check" and to_call == 0:
+                print(f"{player.name} checks")
+                return
+
+            elif action == "call" and to_call > 0:
+                if to_call > player.stack:
+                    to_call = player.stack  # All-in call
+                player.bet_chips(to_call)
+                self.pot += to_call
+                print(f"{player.name} calls {to_call}")
+                return
+
+            elif parts[0] == "raise" and len(parts) == 2 and parts[1].isdigit():
+                raise_amount = int(parts[1])
+                total_bet = to_call + raise_amount
+                if total_bet > player.stack:
+                    print("You don't have enough chips to raise that amount.")
+                    continue
+                player.bet_chips(total_bet)
+                self.pot += total_bet
+                print(f"{player.name} raises by {raise_amount} to {player.current_bet}")
+                return
+
+            print("Invalid action. Try again.")
 
 
     def all_players_equal_bet(self):
