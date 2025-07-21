@@ -1,42 +1,44 @@
-# poker-ai/engine/raise_validation.py
-"""
-Validate a raise action.
-
-Parameters:
-- current_bet (int): current highest bet on the table
-- last_raise_amount (int): the amount of the last raise (minimum raise size)
-- player_current_bet (int): how much the player has already put in the pot this betting round
-- raise_to (int): the total amount the player wants to have put in after raising
-- player_stack (int): how many chips the player has remaining (excluding current_bet)
-
-Raises:
-- ValueError with descriptive message if the raise is invalid.
-"""
-
-def validate_raise(current_bet, last_raise_amount, player_current_bet, raise_to, player_stack):
+def validate_raise(*, raise_to, player_stack, to_call, current_bet, min_raise, big_blind, player_current_bet):
     """
-    Validate that a player's raise_to amount is legal under standard No-Limit Hold'em rules.
+    Validate raise in No-Limit Texas Hold'em.
+
+    Parameters:
+    - raise_to: total bet player wants to have in pot after raise
+    - player_stack: chips player has *excluding* their current bet in pot
+    - to_call: chips player must add to call current bet
+    - current_bet: highest bet on table
+    - min_raise: minimum raise increment
+    - big_blind: big blind value
+    - player_current_bet: player's current total bet in pot (before this action)
+
+    Raises ValueError if invalid.
     """
 
-    # Total the player wants to bet (raise_to) can't exceed current_bet + player_stack
-    max_total_bet = player_current_bet + player_stack
-    if raise_to > max_total_bet:
-        raise ValueError(
-            f"Invalid raise: player only has {player_stack} chips, max total bet is {max_total_bet}, tried {raise_to}"
-        )
+    if raise_to <= 0:
+        raise ValueError("Raise amount must be positive.")
 
+    # How many chips the player must put in now to reach raise_to
+    amount_to_put_in = raise_to - player_current_bet
+
+    # Player cannot put in more chips than they have
+    if amount_to_put_in > player_stack:
+        raise ValueError(f"Invalid raise: player only has {player_stack} chips.")
+
+    # Player cannot raise to an amount less or equal than their current bet
     if raise_to <= player_current_bet:
-        raise ValueError(
-            f"Raise to {raise_to} must be greater than player's current bet {player_current_bet}."
-        )
+        raise ValueError("Raise must be greater than player's current bet.")
 
-    raise_by = raise_to - current_bet
+    # Detect if player is going all-in (putting all chips they have)
+    is_all_in = amount_to_put_in == player_stack
 
-    if raise_by < last_raise_amount:
-        # Allow it only if it's a full all-in
-        total_required = raise_to - player_current_bet
-        if total_required != player_stack:
-            raise ValueError(
-                f"Invalid raise: must raise by at least {last_raise_amount}, tried {raise_by}"
-            )
+    # Handle case when to_call == 0 (player is big blind or first to act with no bet)
+    if to_call == 0:
+        # Opening bet: must be at least big blind unless all-in
+        if raise_to < big_blind and not is_all_in:
+            raise ValueError(f"Opening bet must be at least the big blind ({big_blind}) unless going all-in.")
+    else:
+        # Normal raise: must raise by at least min_raise unless all-in
+        raise_amount = raise_to - current_bet
+        if not is_all_in and raise_amount < min_raise:
+            raise ValueError(f"Must raise by at least {min_raise} chips (big blind or last raise).")
 
