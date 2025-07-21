@@ -105,103 +105,116 @@ class PokerGame:
     def step(self, action, raise_amount=0):
         """
         Perform the action by the current player.
-        Actions: "fold", "call", "check", "raise"
-        raise_amount (int): If action is "raise", this is the **total amount** the player wants to raise to (not raise by).
+        A raise is interpreted as "raise to amount X."
+        
+        Parameters:
+        - action (str): "fold", "call", "check", or "raise"
+        - raise_amount (int): If action == "raise", this is the total amount player wants to have on the table after raising.
         """
-
         if self.hand_over:
             raise RuntimeError("Hand is over. Please reset for new hand.")
 
         player = self.players[self.current_player_idx]
+
+        # Skip folded or all-in players
         if not player.in_hand or player.all_in:
-            # Skip players who folded or are all-in
             self._advance_to_next_player()
             return self._get_state(), 0, self.hand_over, {}
 
         to_call = self.current_bet - player.current_bet
 
+        # Handle human input if needed
         if player.is_human and action is None:
-            # Pause and ask human
             action, raise_amount = self.prompt_human_action(player, to_call)
 
-        print(f"Player {player.name} to act. Action: {action} Raise amount: {raise_amount} To call: {to_call}")
+        print(f"\n==> {player.name}'s turn: Action={action}, ToCall={to_call}, RaiseTo={raise_amount}")
+        print(f"    Stack: {player.stack}, CurrentBet: {player.current_bet}, Pot: {self.pot}")
 
-        # Handle actions
+        # --- ACTIONS ---
+
         if action == "fold":
             player.fold()
-            print(f"{player.name} folds")
+            print(f"{player.name} folds.")
+
         elif action == "call":
-            call_amount = self.current_bet - player.current_bet
-            if call_amount > player.stack:
-                call_amount = player.stack  # all-in
+            call_amount = min(to_call, player.stack)
             player.bet_chips(call_amount)
             self.pot += call_amount
-            print(f"{player.name} calls{' all-in' if call_amount == player.stack else ''} {call_amount}")
+            print(f"{player.name} calls {call_amount}{' (all-in)' if player.all_in else ''}.")
+
         elif action == "check":
             if to_call > 0:
                 raise ValueError("Cannot check when to_call > 0")
-            print(f"{player.name} checks")
+            print(f"{player.name} checks.")
+
         elif action == "raise":
             raise_to = raise_amount
+            raise_by = raise_to - self.current_bet
+            total_contribution = raise_to - player.current_bet
 
-            if raise_to <= player.current_bet:
-                raise ValueError(f"Raise must be more than your current bet ({player.current_bet})")
+            if raise_by < self.last_raise_amount:
+                raise ValueError(
+                    f"Invalid raise: must raise by at least {self.last_raise_amount}, tried {raise_by}"
+                )
 
-            min_raise = self.last_raise_amount
+            if total_contribution > player.stack:
+                raise ValueError(
+                    f"Invalid raise: not enough chips. Needs {total_contribution}, has {player.stack}"
+                )
 
-            if raise_to < self.current_bet + min_raise:
-                raise ValueError(f"Minimum raise is to at least {self.current_bet + min_raise}")
-
-            amount_to_bet_now = raise_to - player.current_bet
-
-            if amount_to_bet_now > player.stack:
-                amount_to_bet_now = player.stack
-                raise_to = player.current_bet + amount_to_bet_now
-
-            player.bet_chips(amount_to_bet_now)
-            self.pot += amount_to_bet_now
-
-            self.last_raise_amount = raise_to - self.current_bet
+            player.stack -= total_contribution
+            player.current_bet += total_contribution
+            self.pot += total_contribution
+            self.last_raise_amount = raise_by
             self.current_bet = raise_to
+            self.last_raiser = player
+            self.last_raiser_index = self.players.index(player)
+            print(f"{player.name} raises to {raise_to} ({raise_by} more).")
 
-            print(f"{player.name} raises to {raise_to}")
         else:
             raise ValueError(f"Invalid action: {action}")
 
-        # Update active players list
+        # --- Update active players ---
         self.active_players = [p for p in self.players if p.in_hand and p.stack > 0]
 
-        # Check for hand end conditions
+        # --- Check for win (everyone else folded) ---
         if len(self.active_players) == 1:
             self.hand_over = True
             winner = self.active_players[0]
             winner.stack += self.pot
-            print(f"Hand ended: {winner.name} wins pot {self.pot}")
+            print(f"\n🏆 Hand ends! {winner.name} wins the pot of {self.pot} chips.")
             return self._get_state(), 1, self.hand_over, {}
 
-        # Check if betting round is complete (all players called or folded)
+        # --- Advance phase or next player ---
         if self._betting_round_complete():
             self._advance_phase()
-            if self.phase_idx == len(self.PHASES) - 1:  # showdown
+
+            if self.phase_idx == len(self.PHASES) - 1:
                 self.showdown()
                 self.hand_over = True
             else:
                 self.reset_bets()
                 if self.phase_idx in [1, 2, 3]:  # flop, turn, river
-                    self.deal_community_cards({1: 3, 2:1, 3:1}[self.phase_idx])
-            # Set next player to act (first active after dealer)
+                    self.deal_community_cards({1: 3, 2: 1, 3: 1}[self.phase_idx])
+
+            # Set current player to first active after dealer
             self.current_player_idx = (self.dealer_position + 1) % len(self.players)
             while not self.players[self.current_player_idx].in_hand:
                 self.current_player_idx = (self.current_player_idx + 1) % len(self.players)
-
         else:
-            # Advance to next active player
             self._advance_to_next_player()
 
-        # For now, reward is 0; you can add logic later for actual RL rewards
         return self._get_state(), 0, self.hand_over, {}
-    
+
     def prompt_human_action(self, player, to_call):
+        """
+        Prompt the action by the human player.
+        Current behavior: A raise is defined as "raise to amount X."
+        
+        Parameters:
+        - action (str): "fold", "call", "check", or "raise"
+        - raise_amount (int): If action == "raise", this is the total amount player wants to have on the table after raising.
+        """
         if self.human_action_callback:
             return self.human_action_callback(player, to_call)
 
