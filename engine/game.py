@@ -3,7 +3,8 @@
 from engine.cards import Deck
 from engine.player import Player
 from engine.hand_evaluator import hand_rank
-from utils.enums import GameMode  # <-- Added import
+from utils.enums import GameMode
+from engine.raise_validation import validate_raise
 
 class PokerGame:
     PHASES = ["preflop", "flop", "turn", "river", "showdown"]
@@ -148,28 +149,7 @@ class PokerGame:
             print(f"{player.name} checks.")
 
         elif action == "raise":
-            raise_to = raise_amount
-            raise_by = raise_to - self.current_bet
-            total_contribution = raise_to - player.current_bet
-
-            if raise_by < self.last_raise_amount:
-                raise ValueError(
-                    f"Invalid raise: must raise by at least {self.last_raise_amount}, tried {raise_by}"
-                )
-
-            if total_contribution > player.stack:
-                raise ValueError(
-                    f"Invalid raise: not enough chips. Needs {total_contribution}, has {player.stack}"
-                )
-
-            player.stack -= total_contribution
-            player.current_bet += total_contribution
-            self.pot += total_contribution
-            self.last_raise_amount = raise_by
-            self.current_bet = raise_to
-            self.last_raiser = player
-            self.last_raiser_index = self.players.index(player)
-            print(f"{player.name} raises to {raise_to} ({raise_by} more).")
+            self.handle_raise(player, raise_to=raise_amount)
 
         else:
             raise ValueError(f"Invalid action: {action}")
@@ -331,6 +311,39 @@ class PokerGame:
             print(f"{p.name}: {p.stack} chips")
             p.reset_for_new_hand()
 
+    def handle_raise(self, player, raise_to: int):
+        to_call = self.current_bet - player.current_bet
+        try:
+            validate_raise(
+                raise_to=raise_to,
+                player_stack=player.stack,
+                to_call=to_call,
+                current_bet=self.current_bet,
+                min_raise=self.last_raise_amount,
+                big_blind=self.big_blind,
+                player_current_bet=player.current_bet
+            )
+        except ValueError as e:
+            print(f"Invalid raise by {player.name}: {e}")
+            raise  # Re-raise for now; later you could handle this more gracefully
+
+        raise_amount = raise_to - player.current_bet
+        actual_raise = raise_to - self.current_bet
+
+        player.stack -= raise_amount
+        player.current_bet = raise_to
+        self.pot += raise_amount
+
+        # Update game state
+        if actual_raise >= self.last_raise_amount:
+            self.last_raise_amount = actual_raise
+            self.last_aggressor = player
+            self.current_bet = raise_to
+            self.active_players = self._players_to_act_after(player)
+        else:
+            # All-in smaller raise: current_bet and last_raise stay unchanged
+            self.active_players.remove(player)
+
     def showdown(self):
         print("\n--- Showdown ---")
         winners = [p for p in self.active_players if p.in_hand]
@@ -359,6 +372,31 @@ class PokerGame:
             winner.stack += split_pot
 
         print("Hand complete.")
+
+    def _players_to_act_after(self, raiser):
+        """
+        Return list of active players (in_hand and not all-in) who still need to act,
+        starting from the player *after* the raiser and looping around.
+        The raiser is considered last to act.
+        """
+        players_to_act = []
+        num_players = len(self.players)
+        start_idx = self.players.index(raiser)
+        idx = (start_idx + 1) % num_players
+
+        while True:
+            player = self.players[idx]
+            if player.in_hand and not player.all_in and player != raiser:
+                players_to_act.append(player)
+            idx = (idx + 1) % num_players
+            if idx == start_idx:
+                break
+
+        # Optionally append raiser at the end if they need to act last
+        # (depends on your game logic; sometimes raiser acts last after everyone else)
+        # players_to_act.append(raiser)
+
+        return players_to_act
 
 if __name__ == "__main__":
     from engine.player import Player
