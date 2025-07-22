@@ -1,6 +1,6 @@
 from typing import NamedTuple, Optional
 
-class RaiseValidationError(ValueError):
+class ActionValidationError(ValueError):
     pass
 
 class RaiseValidationResult(NamedTuple):
@@ -25,7 +25,7 @@ def validate_raise(*, raise_to, player_stack, to_call, current_bet, min_raise, b
     Returns:
     - RaiseValidationResult: namedtuple with is_all_in, raise_amount, amount_to_put_in, reason
 
-    Raises RaiseValidationError if invalid.
+    Raises ActionValidationError if invalid.
 
     Notes:
     - All-in raises are allowed even if below min_raise, as long as they are above current_bet.
@@ -38,50 +38,50 @@ def validate_raise(*, raise_to, player_stack, to_call, current_bet, min_raise, b
         ("current_bet", current_bet), ("min_raise", min_raise), ("big_blind", big_blind), ("player_current_bet", player_current_bet)
     ]:
         if not isinstance(val, int):
-            raise RaiseValidationError(f"{name} must be an integer.")
+            raise ActionValidationError(f"{name} must be an integer.")
         if val < 0:
-            raise RaiseValidationError(f"{name} must be positive.")
+            raise ActionValidationError(f"{name} must be positive.")
 
     if player_stack == 0:
-        raise RaiseValidationError("Player has no chips left to bet.")
+        raise ActionValidationError("Player has no chips left to bet.")
 
     if raise_to <= 0:
-        raise RaiseValidationError("raise_to must be positive.")
+        raise ActionValidationError("raise_to must be positive.")
 
     amount_to_put_in = raise_to - player_current_bet
 
     if amount_to_put_in > player_stack:
-        raise RaiseValidationError(f"Invalid raise: player only has {player_stack} chips.")
+        raise ActionValidationError(f"Invalid raise: player only has {player_stack} chips.")
 
     if raise_to <= player_current_bet:
-        raise RaiseValidationError("Raise must be greater than player's current bet.")
+        raise ActionValidationError("Raise must be greater than player's current bet.")
 
     # All-in detection
     is_all_in = amount_to_put_in == player_stack
 
     # All-in that is less than a call is not allowed
     if is_all_in and amount_to_put_in < to_call:
-        raise RaiseValidationError("All-in is not enough to call the current bet.")
+        raise ActionValidationError("All-in is not enough to call the current bet.")
 
     # All-in raise: must be above current_bet
     if is_all_in:
         if raise_to <= current_bet:
-            raise RaiseValidationError("All-in must be a raise above the current bet.")
+            raise ActionValidationError("All-in must be a raise above the current bet.")
         return RaiseValidationResult(is_all_in=True, raise_amount=raise_to - current_bet, amount_to_put_in=amount_to_put_in)
 
     # Opening bet (to_call == 0)
     if to_call == 0:
         if raise_to < big_blind:
-            raise RaiseValidationError(f"Opening bet must be at least the big blind ({big_blind}).")
+            raise ActionValidationError(f"Opening bet must be at least the big blind ({big_blind}).")
     else:
         # Normal raise: must be at least min_raise
         raise_amount = raise_to - current_bet
         if raise_amount < min_raise:
-            raise RaiseValidationError(f"Must raise by at least {min_raise} chips (big blind or last raise).")
+            raise ActionValidationError(f"Must raise by at least {min_raise} chips (big blind or last raise).")
 
     # Defensive: player_current_bet > current_bet is not allowed
     if player_current_bet > current_bet:
-        raise RaiseValidationError("player_current_bet cannot be greater than current_bet.")
+        raise ActionValidationError("player_current_bet cannot be greater than current_bet.")
 
     return RaiseValidationResult(is_all_in=False, raise_amount=raise_to - current_bet, amount_to_put_in=amount_to_put_in)
 
@@ -96,15 +96,15 @@ def validate_call(*, player_stack, to_call):
     Returns:
     - dict with keys: is_all_in (bool), call_amount (int)
 
-    Raises RaiseValidationError if invalid.
+    Raises ActionValidationError if invalid.
     """
     if not isinstance(player_stack, int) or not isinstance(to_call, int):
-        raise RaiseValidationError("player_stack and to_call must be integers.")
+        raise ActionValidationError("player_stack and to_call must be integers.")
     if player_stack < 0 or to_call < 0:
-        raise RaiseValidationError("player_stack and to_call must be non-negative.")
+        raise ActionValidationError("player_stack and to_call must be non-negative.")
 
     if player_stack == 0:
-        raise RaiseValidationError("Player has no chips left to call.")
+        raise ActionValidationError("Player has no chips left to call.")
 
     # If player has enough chips, normal call
     if player_stack >= to_call:
@@ -123,17 +123,17 @@ def validate_check(*, to_call):
     Returns:
     - dict with key: can_check (bool)
 
-    Raises RaiseValidationError if invalid.
+    Raises ActionValidationError if invalid.
     """
     if not isinstance(to_call, int):
-        raise RaiseValidationError("to_call must be an integer.")
+        raise ActionValidationError("to_call must be an integer.")
     if to_call < 0:
-        raise RaiseValidationError("to_call must be non-negative.")
+        raise ActionValidationError("to_call must be non-negative.")
 
     if to_call == 0:
         return {"can_check": True}
     else:
-        raise RaiseValidationError("Cannot check when there is a bet to call.")
+        raise ActionValidationError("Cannot check when there is a bet to call.")
 
 def validate_fold(*, in_hand, to_call):
     """
@@ -146,18 +146,18 @@ def validate_fold(*, in_hand, to_call):
     Returns:
     - dict with key: can_fold (bool)
 
-    Raises RaiseValidationError if invalid.
+    Raises ActionValidationError if invalid.
     """
     if not isinstance(in_hand, bool):
-        raise RaiseValidationError("in_hand must be a boolean.")
+        raise ActionValidationError("in_hand must be a boolean.")
     if not isinstance(to_call, int):
-        raise RaiseValidationError("to_call must be an integer.")
+        raise ActionValidationError("to_call must be an integer.")
     if to_call < 0:
-        raise RaiseValidationError("to_call must be non-negative.")
+        raise ActionValidationError("to_call must be non-negative.")
 
     if not in_hand:
-        raise RaiseValidationError("Cannot fold if player is not in hand.")
+        raise ActionValidationError("Cannot fold if player is not in hand.")
     if to_call == 0:
-        raise RaiseValidationError("Cannot fold when you can check (to_call == 0).")
+        raise ActionValidationError("Cannot fold when you can check (to_call == 0).")
 
     return {"can_fold": True}

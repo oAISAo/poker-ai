@@ -4,7 +4,7 @@ from engine.cards import Deck
 from engine.player import Player
 from engine.hand_evaluator import hand_rank
 from utils.enums import GameMode
-from engine.action_validation import validate_raise
+from engine.action_validation import validate_raise, validate_call, ActionValidationError
 
 class PokerGame:
     PHASES = ["preflop", "flop", "turn", "river", "showdown"]
@@ -138,10 +138,8 @@ class PokerGame:
             print(f"{player.name} folds.")
 
         elif action == "call":
-            call_amount = min(to_call, player.stack)
-            player.bet_chips(call_amount)
-            self.pot += call_amount
-            print(f"{player.name} calls {call_amount}{' (all-in)' if player.all_in else ''}.")
+            result = self.handle_call(player)
+            print(f"{player.name} calls {result['call_amount']}{' (all-in)' if result['is_all_in'] else ''}.")
 
         elif action == "check":
             if to_call > 0:
@@ -310,6 +308,34 @@ class PokerGame:
         for p in self.players:
             print(f"{p.name}: {p.stack} chips")
             p.reset_for_new_hand()
+
+    def handle_call(self, player):
+        to_call = self.current_bet - player.current_bet
+        if to_call == 0:
+            raise ActionValidationError("Cannot call when to_call is zero; should check instead.")
+        try:
+            result = validate_call(player_stack=player.stack, to_call=to_call)
+        except ValueError as e:
+            print(f"Invalid call by {player.name}: {e}")
+            raise
+
+        call_amount = result["call_amount"]
+        is_all_in = result["is_all_in"]
+
+        player.stack -= call_amount
+        player.current_bet += call_amount
+        self.pot += call_amount
+
+        if player.stack == 0:
+            player.all_in = True
+
+        return {
+            "player": player.name,
+            "call_amount": call_amount,
+            "is_all_in": is_all_in,
+            "pot": self.pot,
+            "current_bet": self.current_bet,
+        }
 
     def handle_raise(self, player, raise_to: int):
         to_call = self.current_bet - player.current_bet

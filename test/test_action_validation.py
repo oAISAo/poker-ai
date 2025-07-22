@@ -1,5 +1,5 @@
 import pytest
-from engine.action_validation import validate_raise, validate_call, validate_check, validate_fold, RaiseValidationError
+from engine.action_validation import validate_raise, validate_call, validate_check, validate_fold, ActionValidationError
 
 # --- validate_check tests ---
 
@@ -10,17 +10,17 @@ def test_check_when_to_call_zero():
 
 def test_check_when_to_call_positive_fails():
     """Player cannot check if to_call is greater than zero."""
-    with pytest.raises(RaiseValidationError, match="Cannot check when there is a bet to call."):
+    with pytest.raises(ActionValidationError, match="Cannot check when there is a bet to call."):
         validate_check(to_call=10)
 
 def test_check_with_negative_to_call_fails():
     """Negative to_call should fail."""
-    with pytest.raises(RaiseValidationError):
+    with pytest.raises(ActionValidationError):
         validate_check(to_call=-1)
 
 def test_check_with_non_integer_to_call_fails():
     """Non-integer to_call should fail."""
-    with pytest.raises(RaiseValidationError):
+    with pytest.raises(ActionValidationError):
         validate_check(to_call="zero")
 
 # --- validate_fold tests ---
@@ -32,27 +32,27 @@ def test_fold_when_in_hand_and_to_call_positive():
 
 def test_fold_when_in_hand_and_to_call_zero_fails():
     """Player cannot fold if they are in hand and to_call is zero (must check)."""
-    with pytest.raises(RaiseValidationError, match="Cannot fold when you can check"):
+    with pytest.raises(ActionValidationError, match="Cannot fold when you can check"):
         validate_fold(in_hand=True, to_call=0)
 
 def test_fold_when_not_in_hand_fails():
     """Player cannot fold if they are not in hand."""
-    with pytest.raises(RaiseValidationError, match="Cannot fold if player is not in hand."):
+    with pytest.raises(ActionValidationError, match="Cannot fold if player is not in hand."):
         validate_fold(in_hand=False, to_call=10)
 
 def test_fold_with_negative_to_call_fails():
     """Negative to_call should fail."""
-    with pytest.raises(RaiseValidationError):
+    with pytest.raises(ActionValidationError):
         validate_fold(in_hand=True, to_call=-1)
 
 def test_fold_with_non_bool_in_hand_fails():
     """Non-boolean in_hand should fail."""
-    with pytest.raises(RaiseValidationError):
+    with pytest.raises(ActionValidationError):
         validate_fold(in_hand=1, to_call=10)
 
 def test_fold_with_non_integer_to_call_fails():
     """Non-integer to_call should fail."""
-    with pytest.raises(RaiseValidationError):
+    with pytest.raises(ActionValidationError):
         validate_fold(in_hand=True, to_call="ten")
 
 # --- validate_call tests ---
@@ -77,17 +77,17 @@ def test_call_with_exact_stack():
 
 def test_call_with_zero_stack_fails():
     """Player with zero chips cannot call."""
-    with pytest.raises(RaiseValidationError, match="Player has no chips left to call."):
+    with pytest.raises(ActionValidationError, match="Player has no chips left to call."):
         validate_call(player_stack=0, to_call=50)
 
 def test_call_with_negative_stack_fails():
     """Negative stack should fail."""
-    with pytest.raises(RaiseValidationError):
+    with pytest.raises(ActionValidationError):
         validate_call(player_stack=-10, to_call=50)
 
 def test_call_with_negative_to_call_fails():
     """Negative to_call should fail."""
-    with pytest.raises(RaiseValidationError):
+    with pytest.raises(ActionValidationError):
         validate_call(player_stack=100, to_call=-5)
 
 # --- validate_raise tests ---
@@ -107,7 +107,7 @@ def test_raise_just_above_min_raise_pass():
 
 def test_raise_to_equal_player_current_bet_fails():
     """Raise to exactly player's current bet should fail."""
-    with pytest.raises(RaiseValidationError, match="Raise must be greater than player's current bet."):
+    with pytest.raises(ActionValidationError, match="Raise must be greater than player's current bet."):
         validate_raise(
             raise_to=50,
             player_stack=100,
@@ -159,7 +159,7 @@ def test_all_in_below_min_raise_allowed():
 
 def test_invalid_partial_raise_not_all_in_fails():
     """Partial raise not all-in and not enough chips should fail."""
-    with pytest.raises(RaiseValidationError, match="player only has 15 chips"):
+    with pytest.raises(ActionValidationError, match="player only has 15 chips"):
         validate_raise(
             raise_to=64,
             player_stack=15,
@@ -172,17 +172,17 @@ def test_invalid_partial_raise_not_all_in_fails():
 
 def test_raise_to_equal_or_less_than_current_bet_fails():
     """Raise to less or equal player's current bet should fail."""
-    with pytest.raises(RaiseValidationError, match="Raise must be greater than player's current bet."):
+    with pytest.raises(ActionValidationError, match="Raise must be greater than player's current bet."):
         validate_raise(raise_to=50, player_stack=100, to_call=20, current_bet=70, min_raise=20, big_blind=20, player_current_bet=50)
 
 def test_raise_exceeds_stack_fails():
     """Raise amount exceeds player's stack should fail."""
-    with pytest.raises(RaiseValidationError, match="player only has 10 chips"):
+    with pytest.raises(ActionValidationError, match="player only has 10 chips"):
         validate_raise(raise_to=60, player_stack=10, to_call=20, current_bet=50, min_raise=20, big_blind=20, player_current_bet=30)
 
 def test_raise_smaller_than_min_raise_fails():
     """Raise smaller than min_raise (normal raise) should fail."""
-    with pytest.raises(RaiseValidationError, match="Must raise by at least 20 chips"):
+    with pytest.raises(ActionValidationError, match="Must raise by at least 20 chips"):
         validate_raise(raise_to=65, player_stack=100, to_call=20, current_bet=50, min_raise=20, big_blind=20, player_current_bet=30)
 
 def test_valid_raise_exact_min_raise_pass():
@@ -192,7 +192,7 @@ def test_valid_raise_exact_min_raise_pass():
 
 def test_opening_bet_less_than_big_blind_fails():
     """Opening bet less than big blind should fail unless all-in."""
-    with pytest.raises(RaiseValidationError, match="Opening bet must be at least the big blind"):
+    with pytest.raises(ActionValidationError, match="Opening bet must be at least the big blind"):
         validate_raise(raise_to=10, player_stack=100, to_call=0, current_bet=0, min_raise=20, big_blind=20, player_current_bet=0)
 
 def test_opening_bet_equal_to_big_blind_pass():
@@ -207,12 +207,12 @@ def test_opening_bet_less_than_big_blind_but_all_in_pass():
 
 def test_raise_to_less_than_current_bet_to_call_zero_fails():
     """Raise with to_call=0 but raise_to less than current_bet should fail."""
-    with pytest.raises(RaiseValidationError, match="Raise must be greater than player's current bet."):
+    with pytest.raises(ActionValidationError, match="Raise must be greater than player's current bet."):
         validate_raise(raise_to=90, player_stack=100, to_call=0, current_bet=100, min_raise=40, big_blind=20, player_current_bet=100)
 
 def test_raise_to_less_or_equal_current_bet_fails():
     """Raise equal to or less than player's current bet should fail."""
-    with pytest.raises(RaiseValidationError, match="Raise must be greater than player's current bet."):
+    with pytest.raises(ActionValidationError, match="Raise must be greater than player's current bet."):
         validate_raise(
             raise_to=80,
             player_stack=100,
@@ -238,7 +238,7 @@ def test_all_in_exactly_min_raise():
 
 def test_all_in_less_than_call_fails():
     """All-in that is less than a call should fail."""
-    with pytest.raises(RaiseValidationError, match="All-in is not enough to call the current bet."):
+    with pytest.raises(ActionValidationError, match="All-in is not enough to call the current bet."):
         validate_raise(
             raise_to=15,
             player_stack=5,
@@ -251,7 +251,7 @@ def test_all_in_less_than_call_fails():
 
 def test_negative_raise_to_fails():
     """Negative raise_to should fail."""
-    with pytest.raises(RaiseValidationError, match="raise_to must be positive."):
+    with pytest.raises(ActionValidationError, match="raise_to must be positive."):
         validate_raise(
             raise_to=-10,
             player_stack=100,
@@ -264,7 +264,7 @@ def test_negative_raise_to_fails():
 
 def test_zero_raise_to_fails():
     """Zero raise_to should fail."""
-    with pytest.raises(RaiseValidationError, match="raise_to must be positive."):
+    with pytest.raises(ActionValidationError, match="raise_to must be positive."):
         validate_raise(
             raise_to=0,
             player_stack=100,
@@ -277,7 +277,7 @@ def test_zero_raise_to_fails():
 
 def test_player_current_bet_greater_than_current_bet_fails():
     """player_current_bet greater than current_bet should fail."""
-    with pytest.raises(RaiseValidationError, match="player_current_bet cannot be greater than current_bet."):
+    with pytest.raises(ActionValidationError, match="player_current_bet cannot be greater than current_bet."):
         validate_raise(
             raise_to=100,
             player_stack=100,
@@ -290,7 +290,7 @@ def test_player_current_bet_greater_than_current_bet_fails():
 
 def test_player_stack_zero_fails():
     """Raise with player_stack = 0 should fail."""
-    with pytest.raises(RaiseValidationError, match="Player has no chips left to bet."):
+    with pytest.raises(ActionValidationError, match="Player has no chips left to bet."):
         validate_raise(
             raise_to=10,
             player_stack=0,
