@@ -1,5 +1,61 @@
 import pytest
-from engine.action_validation import validate_raise, validate_call, RaiseValidationError
+from engine.action_validation import validate_raise, validate_call, validate_check, validate_fold, RaiseValidationError
+
+# --- validate_check tests ---
+
+def test_check_when_to_call_zero():
+    """Player can check if to_call is zero."""
+    result = validate_check(to_call=0)
+    assert result["can_check"]
+
+def test_check_when_to_call_positive_fails():
+    """Player cannot check if to_call is greater than zero."""
+    with pytest.raises(RaiseValidationError, match="Cannot check when there is a bet to call."):
+        validate_check(to_call=10)
+
+def test_check_with_negative_to_call_fails():
+    """Negative to_call should fail."""
+    with pytest.raises(RaiseValidationError):
+        validate_check(to_call=-1)
+
+def test_check_with_non_integer_to_call_fails():
+    """Non-integer to_call should fail."""
+    with pytest.raises(RaiseValidationError):
+        validate_check(to_call="zero")
+
+# --- validate_fold tests ---
+
+def test_fold_when_in_hand_and_to_call_positive():
+    """Player can fold if they are in hand and there is a bet to call."""
+    result = validate_fold(in_hand=True, to_call=10)
+    assert result["can_fold"]
+
+def test_fold_when_in_hand_and_to_call_zero_fails():
+    """Player cannot fold if they are in hand and to_call is zero (must check)."""
+    with pytest.raises(RaiseValidationError, match="Cannot fold when you can check"):
+        validate_fold(in_hand=True, to_call=0)
+
+def test_fold_when_not_in_hand_fails():
+    """Player cannot fold if they are not in hand."""
+    with pytest.raises(RaiseValidationError, match="Cannot fold if player is not in hand."):
+        validate_fold(in_hand=False, to_call=10)
+
+def test_fold_with_negative_to_call_fails():
+    """Negative to_call should fail."""
+    with pytest.raises(RaiseValidationError):
+        validate_fold(in_hand=True, to_call=-1)
+
+def test_fold_with_non_bool_in_hand_fails():
+    """Non-boolean in_hand should fail."""
+    with pytest.raises(RaiseValidationError):
+        validate_fold(in_hand=1, to_call=10)
+
+def test_fold_with_non_integer_to_call_fails():
+    """Non-integer to_call should fail."""
+    with pytest.raises(RaiseValidationError):
+        validate_fold(in_hand=True, to_call="ten")
+
+# --- validate_call tests ---
 
 def test_call_with_enough_chips():
     """Player can call the full amount if they have enough chips."""
@@ -33,6 +89,8 @@ def test_call_with_negative_to_call_fails():
     """Negative to_call should fail."""
     with pytest.raises(RaiseValidationError):
         validate_call(player_stack=100, to_call=-5)
+
+# --- validate_raise tests ---
 
 def test_raise_just_above_min_raise_pass():
     """Raise just above the minimum increment should pass."""

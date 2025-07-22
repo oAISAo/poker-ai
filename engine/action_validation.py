@@ -113,18 +113,51 @@ def validate_call(*, player_stack, to_call):
     elif player_stack < to_call:
         return {"is_all_in": True, "call_amount": player_stack}
 
-def validate_check():
+def validate_check(*, to_call):
     """
-    Placeholder for check validation logic.
-    This function should be implemented similarly to validate_raise,
-    checking if the player can legally check based on the current game state.
-    """
-    raise NotImplementedError("Check validation logic is not yet implemented.") 
+    Validate a check action in No-Limit Texas Hold'em.
 
-def validate_fold():
+    Parameters:
+    - to_call: chips needed to call the current bet
+
+    Returns:
+    - dict with key: can_check (bool)
+
+    Raises RaiseValidationError if invalid.
     """
-    Placeholder for fold validation logic.
-    This function should be implemented similarly to validate_raise,
-    checking if the player can legally fold based on the current game state.
+    if not isinstance(to_call, int):
+        raise RaiseValidationError("to_call must be an integer.")
+    if to_call < 0:
+        raise RaiseValidationError("to_call must be non-negative.")
+
+    if to_call == 0:
+        return {"can_check": True}
+    else:
+        raise RaiseValidationError("Cannot check when there is a bet to call.")
+
+def validate_fold(*, in_hand, to_call):
     """
-    raise NotImplementedError("Fold validation logic is not yet implemented.")  
+    Validate a fold action in No-Limit Texas Hold'em.
+
+    Parameters:
+    - in_hand: bool, whether the player is currently in the hand
+    - to_call: int, chips needed to call the current bet
+
+    Returns:
+    - dict with key: can_fold (bool)
+
+    Raises RaiseValidationError if invalid.
+    """
+    if not isinstance(in_hand, bool):
+        raise RaiseValidationError("in_hand must be a boolean.")
+    if not isinstance(to_call, int):
+        raise RaiseValidationError("to_call must be an integer.")
+    if to_call < 0:
+        raise RaiseValidationError("to_call must be non-negative.")
+
+    if not in_hand:
+        raise RaiseValidationError("Cannot fold if player is not in hand.")
+    if to_call == 0:
+        raise RaiseValidationError("Cannot fold when you can check (to_call == 0).")
+
+    return {"can_fold": True}
