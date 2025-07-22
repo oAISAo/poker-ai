@@ -1,0 +1,130 @@
+from typing import NamedTuple, Optional
+
+class RaiseValidationError(ValueError):
+    pass
+
+class RaiseValidationResult(NamedTuple):
+    is_all_in: bool
+    raise_amount: int
+    amount_to_put_in: int
+    reason: Optional[str] = None
+
+def validate_raise(*, raise_to, player_stack, to_call, current_bet, min_raise, big_blind, player_current_bet) -> RaiseValidationResult:
+    """
+    Validate raise in No-Limit Texas Hold'em.
+
+    Parameters:
+    - raise_to: total bet player wants to have in pot after raise
+    - player_stack: chips player has *excluding* their current bet in pot
+    - to_call: chips player must add to call current bet
+    - current_bet: highest bet on table
+    - min_raise: minimum raise increment
+    - big_blind: big blind value
+    - player_current_bet: player's current total bet in pot (before this action)
+
+    Returns:
+    - RaiseValidationResult: namedtuple with is_all_in, raise_amount, amount_to_put_in, reason
+
+    Raises RaiseValidationError if invalid.
+
+    Notes:
+    - All-in raises are allowed even if below min_raise, as long as they are above current_bet.
+    - All numeric arguments must be non-negative integers.
+    """
+
+    # Defensive: type and value checks
+    for name, val in [
+        ("raise_to", raise_to), ("player_stack", player_stack), ("to_call", to_call),
+        ("current_bet", current_bet), ("min_raise", min_raise), ("big_blind", big_blind), ("player_current_bet", player_current_bet)
+    ]:
+        if not isinstance(val, int):
+            raise RaiseValidationError(f"{name} must be an integer.")
+        if val < 0:
+            raise RaiseValidationError(f"{name} must be positive.")
+
+    if player_stack == 0:
+        raise RaiseValidationError("Player has no chips left to bet.")
+
+    if raise_to <= 0:
+        raise RaiseValidationError("raise_to must be positive.")
+
+    amount_to_put_in = raise_to - player_current_bet
+
+    if amount_to_put_in > player_stack:
+        raise RaiseValidationError(f"Invalid raise: player only has {player_stack} chips.")
+
+    if raise_to <= player_current_bet:
+        raise RaiseValidationError("Raise must be greater than player's current bet.")
+
+    # All-in detection
+    is_all_in = amount_to_put_in == player_stack
+
+    # All-in that is less than a call is not allowed
+    if is_all_in and amount_to_put_in < to_call:
+        raise RaiseValidationError("All-in is not enough to call the current bet.")
+
+    # All-in raise: must be above current_bet
+    if is_all_in:
+        if raise_to <= current_bet:
+            raise RaiseValidationError("All-in must be a raise above the current bet.")
+        return RaiseValidationResult(is_all_in=True, raise_amount=raise_to - current_bet, amount_to_put_in=amount_to_put_in)
+
+    # Opening bet (to_call == 0)
+    if to_call == 0:
+        if raise_to < big_blind:
+            raise RaiseValidationError(f"Opening bet must be at least the big blind ({big_blind}).")
+    else:
+        # Normal raise: must be at least min_raise
+        raise_amount = raise_to - current_bet
+        if raise_amount < min_raise:
+            raise RaiseValidationError(f"Must raise by at least {min_raise} chips (big blind or last raise).")
+
+    # Defensive: player_current_bet > current_bet is not allowed
+    if player_current_bet > current_bet:
+        raise RaiseValidationError("player_current_bet cannot be greater than current_bet.")
+
+    return RaiseValidationResult(is_all_in=False, raise_amount=raise_to - current_bet, amount_to_put_in=amount_to_put_in)
+
+def validate_call(*, player_stack, to_call):
+    """
+    Validate a call action in No-Limit Texas Hold'em.
+
+    Parameters:
+    - player_stack: chips player has (not counting what's already in the pot)
+    - to_call: chips needed to call the current bet
+
+    Returns:
+    - dict with keys: is_all_in (bool), call_amount (int)
+
+    Raises RaiseValidationError if invalid.
+    """
+    if not isinstance(player_stack, int) or not isinstance(to_call, int):
+        raise RaiseValidationError("player_stack and to_call must be integers.")
+    if player_stack < 0 or to_call < 0:
+        raise RaiseValidationError("player_stack and to_call must be non-negative.")
+
+    if player_stack == 0:
+        raise RaiseValidationError("Player has no chips left to call.")
+
+    # If player has enough chips, normal call
+    if player_stack >= to_call:
+        return {"is_all_in": False, "call_amount": to_call}
+    # If player does not have enough, it's an all-in call for less
+    elif player_stack < to_call:
+        return {"is_all_in": True, "call_amount": player_stack}
+
+def validate_check():
+    """
+    Placeholder for check validation logic.
+    This function should be implemented similarly to validate_raise,
+    checking if the player can legally check based on the current game state.
+    """
+    raise NotImplementedError("Check validation logic is not yet implemented.") 
+
+def validate_fold():
+    """
+    Placeholder for fold validation logic.
+    This function should be implemented similarly to validate_raise,
+    checking if the player can legally fold based on the current game state.
+    """
+    raise NotImplementedError("Fold validation logic is not yet implemented.")  

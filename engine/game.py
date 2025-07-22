@@ -4,7 +4,7 @@ from engine.cards import Deck
 from engine.player import Player
 from engine.hand_evaluator import hand_rank
 from utils.enums import GameMode
-from engine.raise_validation import validate_raise
+from engine.action_validation import validate_raise
 
 class PokerGame:
     PHASES = ["preflop", "flop", "turn", "river", "showdown"]
@@ -314,7 +314,7 @@ class PokerGame:
     def handle_raise(self, player, raise_to: int):
         to_call = self.current_bet - player.current_bet
         try:
-            validate_raise(
+            result = validate_raise(
                 raise_to=raise_to,
                 player_stack=player.stack,
                 to_call=to_call,
@@ -325,7 +325,7 @@ class PokerGame:
             )
         except ValueError as e:
             print(f"Invalid raise by {player.name}: {e}")
-            raise  # Re-raise for now; later you could handle this more gracefully
+            raise
 
         raise_amount = raise_to - player.current_bet
         actual_raise = raise_to - self.current_bet
@@ -342,7 +342,20 @@ class PokerGame:
             self.active_players = self._players_to_act_after(player)
         else:
             # All-in smaller raise: current_bet and last_raise stay unchanged
-            self.active_players.remove(player)
+            if player in self.active_players:
+                self.active_players.remove(player)
+
+        # Optionally return result for testing/logging
+        return {
+            "player": player.name,
+            "raise_to": raise_to,
+            "raise_amount": raise_amount,
+            "actual_raise": actual_raise,
+            "is_all_in": result.is_all_in,
+            "pot": self.pot,
+            "current_bet": self.current_bet,
+            "last_raise_amount": self.last_raise_amount,
+        }
 
     def showdown(self):
         print("\n--- Showdown ---")
