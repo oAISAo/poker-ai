@@ -1,5 +1,5 @@
 # test_human/test_human_round.py
-# run: python test_human/test_human_round.py
+# run: python -m test_human.test_human_round
 
 from engine.game import PokerGame, GameMode
 from engine.player import Player

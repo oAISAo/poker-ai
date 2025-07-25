@@ -3,7 +3,7 @@
 from engine.cards import Card
 import traceback
 
-print("LOADED Player class from", __file__)
+print("USING DASHED DIR")
 
 class Player:
     def __init__(self, name, stack=1000, is_human=False):
@@ -23,7 +23,7 @@ class Player:
 
     def bet_chips(self, amount, suppress_log=False):
         print(f"[DEBUG bet_chips] {self.name} called bet_chips({amount}, suppress_log={suppress_log})")
-        traceback.print_stack(limit=5)
+        # traceback.print_stack(limit=5)
         actual_bet = min(self.stack, amount)
         self.stack -= actual_bet
         self.current_bet += actual_bet
