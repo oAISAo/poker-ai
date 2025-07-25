@@ -301,7 +301,7 @@ class PokerGame:
                 options.append("call")
 
             if player.stack > to_call:
-                options.append("raise <amount>")
+                options.append("raise <amount> (total bet after raise)")
 
             action = input(f"Choose action {options}: ").strip().lower()
             parts = action.split()
@@ -418,6 +418,7 @@ class PokerGame:
             p.reset_for_new_hand()
 
     def handle_fold(self, player):
+        print(f"[DEBUG handle_fold] {player.name} called handle_fold()")
         if not isinstance(self.current_bet, int) or not isinstance(player.current_bet, int):
             raise ActionValidationError("current_bet and player.current_bet must be integers.")
         to_call = self.current_bet - player.current_bet
@@ -435,6 +436,7 @@ class PokerGame:
         }
 
     def handle_check(self, player):
+        print(f"[DEBUG handle_check] {player.name} called handle_check()")
         if not isinstance(self.current_bet, int) or not isinstance(player.current_bet, int):
             raise ActionValidationError("current_bet and player.current_bet must be integers.")
         to_call = self.current_bet - player.current_bet
@@ -451,6 +453,7 @@ class PokerGame:
         }
 
     def handle_call(self, player):
+        print(f"[DEBUG handle_call] {player.name} called handle_call()")
         if not isinstance(self.current_bet, int) or not isinstance(player.current_bet, int):
             raise ActionValidationError("current_bet and player.current_bet must be integers.")
         to_call = self.current_bet - player.current_bet
@@ -482,8 +485,11 @@ class PokerGame:
         }
 
     def handle_raise(self, player, raise_to: int):
+        print(f"[DEBUG handle_raise] {player.name} called handle_raise({raise_to})")
+        # Defensive: ensure current_bet and player.current_bet are ints
         if not isinstance(self.current_bet, int) or not isinstance(player.current_bet, int):
             raise ActionValidationError("current_bet and player.current_bet must be integers.")
+
         to_call = self.current_bet - player.current_bet
         try:
             result = validate_raise(
@@ -496,15 +502,16 @@ class PokerGame:
                 player_current_bet=player.current_bet
             )
         except ValueError as e:
-            print(f"Invalid raise by {player.name}: {e}")
             raise ActionValidationError(str(e))
 
-        raise_amount = raise_to - player.current_bet
+        raise_amount = raise_to - player.current_bet  # Only pay the difference!
         actual_raise = raise_to - self.current_bet
 
-        player.stack -= raise_amount
-        player.total_contributed += raise_amount
-        player.current_bet = raise_to
+        if raise_amount > player.stack:
+            raise ActionValidationError("Player cannot raise more than their stack.")
+
+        # Use bet_chips for logging and consistency
+        player.bet_chips(raise_amount, suppress_log=True)
         self.pot += raise_amount
 
         if player.stack == 0:
@@ -513,20 +520,21 @@ class PokerGame:
         # Update game state
         if actual_raise >= self.last_raise_amount:
             self.last_raise_amount = actual_raise
-            self.last_aggressor = player
             self.current_bet = raise_to
-            self.active_players = self._players_to_act_after(player)
+            # Reset players_to_act: everyone after raiser who is not all-in or folded
+            self.players_to_act = self._players_to_act_after(player)
         else:
-            # All-in smaller raise: current_bet and last_raise stay unchanged
-            if player in self.active_players:
-                self.active_players.remove(player)
+            # Not a valid raise (should not happen if validation is correct)
+            pass
+
+        print(f"{player.name} raises to {raise_to}. (Put in {raise_amount}, stack now {player.stack})")
 
         return {
             "player": player.name,
             "raise_to": raise_to,
             "raise_amount": raise_amount,
             "actual_raise": actual_raise,
-            "is_all_in": result.is_all_in,
+            "is_all_in": player.all_in,
             "pot": self.pot,
             "current_bet": self.current_bet,
             "last_raise_amount": self.last_raise_amount,

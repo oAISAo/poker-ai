@@ -4,6 +4,8 @@
 from engine.game import PokerGame, GameMode
 from engine.player import Player
 import random
+import sys
+print("sys.path:", sys.path)
 
 def main():
     print("=== Poker AI Interactive Test ===")
