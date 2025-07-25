@@ -50,13 +50,10 @@ def validate_raise(*, raise_to, player_stack, to_call, current_bet, min_raise, b
 
     amount_to_put_in = raise_to - player_current_bet
 
-    if amount_to_put_in > player_stack:
-        raise ActionValidationError(f"Invalid raise: player only has {player_stack} chips.")
-
     if raise_to <= player_current_bet:
         raise ActionValidationError("Raise must be greater than player's current bet.")
 
-    # All-in detection
+    # All-in detection (must be checked before amount_to_put_in > player_stack)
     is_all_in = amount_to_put_in == player_stack
 
     # All-in that is less than a call is not allowed
@@ -69,17 +66,20 @@ def validate_raise(*, raise_to, player_stack, to_call, current_bet, min_raise, b
             raise ActionValidationError("All-in must be a raise above the current bet.")
         return RaiseValidationResult(is_all_in=True, raise_amount=raise_to - current_bet, amount_to_put_in=amount_to_put_in)
 
+    # Now check if player is trying to put in more than their stack (not all-in)
+    print(f"DEBUG: raise_to={raise_to}, player_stack={player_stack}, to_call={to_call}, current_bet={current_bet}, min_raise={min_raise}, big_blind={big_blind}, player_current_bet={player_current_bet}, amount_to_put_in={amount_to_put_in}")
+    if amount_to_put_in > player_stack:
+        raise ActionValidationError(f"Invalid raise: player only has {player_stack} chips.")
+
     # Opening bet (to_call == 0)
     if to_call == 0:
-        if raise_to < big_blind:
-            raise ActionValidationError(f"Opening bet must be at least the big blind ({big_blind}).")
+        if raise_to < current_bet + big_blind:
+            raise ActionValidationError(f"Minimum raise is to {current_bet + big_blind}")
     else:
-        # Normal raise: must be at least min_raise
         raise_amount = raise_to - current_bet
         if raise_amount < min_raise:
             raise ActionValidationError(f"Must raise by at least {min_raise} chips (big blind or last raise).")
 
-    # Defensive: player_current_bet > current_bet is not allowed
     if player_current_bet > current_bet:
         raise ActionValidationError("player_current_bet cannot be greater than current_bet.")
 

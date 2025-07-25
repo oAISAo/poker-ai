@@ -4,7 +4,7 @@ from engine.cards import Deck
 from engine.player import Player
 from engine.hand_evaluator import hand_rank
 from utils.enums import GameMode
-from engine.action_validation import validate_raise, validate_call, ActionValidationError
+from engine.action_validation import validate_raise, validate_call, validate_check, validate_fold, ActionValidationError
 
 class PokerGame:
     PHASES = ["preflop", "flop", "turn", "river", "showdown"]
@@ -30,8 +30,11 @@ class PokerGame:
         self.hand_over = False
         self.players_who_posted_blinds = set()
         self.last_raise_amount = self.big_blind  # Track last raise size
+        self.bb_acted_preflop = False  # Track if BB has acted preflop
+        self.players_to_act = []  # Track who still needs to act this betting round
 
     def reset_for_new_hand(self, deck=None):
+        # Do NOT call reset_bets() here! Bets should only be reset after a betting round is complete.
         if deck is None:
             self.deck = Deck()
             self.deck.shuffle()
@@ -43,6 +46,8 @@ class PokerGame:
         self.current_bet = 0
         self.phase_idx = 0
         self.hand_over = False
+        self.bb_acted_preflop = False
+        self.players_to_act = []
 
         for player in self.players:
             player.reset_for_new_hand()
@@ -56,15 +61,37 @@ class PokerGame:
         self.post_blinds()
         self.deal_hole_cards()
 
-        self.current_player_idx = (self.dealer_position + 3) % len(self.players)
-        self.last_raise_amount = self.big_blind
+        # --- HEADS-UP LOGIC: SB (dealer) acts first preflop ---
+        if len(self.players) == 2:
+            self.current_player_idx = self.dealer_position
+            # Heads-up: SB acts first, then BB
+            self.players_to_act = [self.players[(self.dealer_position + 1) % 2]]
+        else:
+            # 3+ players: first to act is left of BB, then next, ..., up to BB
+            first_to_act = (self.dealer_position + 3) % len(self.players)
+            bb_pos = (self.dealer_position + 2) % len(self.players)
+            idx = first_to_act
+            self.players_to_act = []
+            while True:
+                if self.players[idx].in_hand and not self.players[idx].all_in:
+                    self.players_to_act.append(self.players[idx])
+                if idx == bb_pos:
+                    break
+                idx = (idx + 1) % len(self.players)
+            self.current_player_idx = first_to_act
+        self.last_raise_amount
 
     def rotate_dealer(self):
         self.dealer_position = (self.dealer_position + 1) % len(self.players)
 
     def post_blinds(self):
-        sb_pos = (self.dealer_position + 1) % len(self.players)
-        bb_pos = (self.dealer_position + 2) % len(self.players)
+        if len(self.players) == 2:
+            # Heads-up: dealer is SB, other is BB
+            sb_pos = self.dealer_position
+            bb_pos = (self.dealer_position + 1) % 2
+        else:
+            sb_pos = (self.dealer_position + 1) % len(self.players)
+            bb_pos = (self.dealer_position + 2) % len(self.players)
 
         sb_player = self.players[sb_pos]
         bb_player = self.players[bb_pos]
@@ -115,7 +142,14 @@ class PokerGame:
         if self.hand_over:
             raise RuntimeError("Hand is over. Please reset for new hand.")
 
+        print(f"[DEBUG] players_to_act at start: {[p.name for p in self.players_to_act]}")
+
         player = self.players[self.current_player_idx]
+
+        if len(self.players) == 2 and self.phase_idx == 0:  # preflop
+            bb_pos = (self.dealer_position + 1) % 2
+            if self.current_player_idx == bb_pos:
+                self.bb_acted_preflop = True
 
         # Skip folded or all-in players
         if not player.in_hand or player.all_in:
@@ -128,13 +162,15 @@ class PokerGame:
         if player.is_human and action is None:
             action, raise_amount = self.prompt_human_action(player, to_call)
 
+        player = self.players[self.current_player_idx]
+
         print(f"\n==> {player.name}'s turn: Action={action}, ToCall={to_call}, RaiseTo={raise_amount}")
         print(f"    Stack: {player.stack}, CurrentBet: {player.current_bet}, Pot: {self.pot}")
 
         # --- ACTIONS ---
 
         if action == "fold":
-            player.fold()
+            result = self.handle_fold(player)
             print(f"{player.name} folds.")
 
         elif action == "call":
@@ -142,12 +178,14 @@ class PokerGame:
             print(f"{player.name} calls {result['call_amount']}{' (all-in)' if result['is_all_in'] else ''}.")
 
         elif action == "check":
-            if to_call > 0:
-                raise ValueError("Cannot check when to_call > 0")
+            result = self.handle_check(player)
             print(f"{player.name} checks.")
 
         elif action == "raise":
             self.handle_raise(player, raise_to=raise_amount)
+            # After a raise, set players_to_act to all active (in_hand, not all-in) players after raiser, excluding raiser
+            self.players_to_act = self._players_to_act_after(player)
+            print(f"[DEBUG] players_to_act after raise: {[p.name for p in self.players_to_act]}")
 
         else:
             raise ValueError(f"Invalid action: {action}")
@@ -155,32 +193,71 @@ class PokerGame:
         # --- Update active players ---
         self.active_players = [p for p in self.players if p.in_hand and p.stack > 0]
 
+        # Clean up players_to_act: only keep players who are still in hand and not all-in
+        self.players_to_act = [p for p in self.players_to_act if p.in_hand and not p.all_in]
+
+        # Always remove the acting player from players_to_act (except after a raise, which resets the list)
+        if action in ("call", "check", "fold") and player in self.players_to_act:
+            print(f"[DEBUG] Removing {player.name} from players_to_act")
+            self.players_to_act.remove(player)
+
+        # Defensive check: ensure no folded or all-in players remain in players_to_act
+        for p in self.players_to_act:
+            assert p.in_hand and not p.all_in, (
+                f"Defensive check failed: {p.name} in players_to_act but in_hand={p.in_hand}, all_in={p.all_in}"
+            )
+        if self.players_to_act:
+            print("[DEBUG] players_to_act after cleanup:", [p.name for p in self.players_to_act])
+
         # --- Check for win (everyone else folded) ---
-        if len(self.active_players) == 1:
+        if len([p for p in self.active_players if p.in_hand]) == 1:
+            # Only one player not folded: award pot
             self.hand_over = True
-            winner = self.active_players[0]
+            winner = [p for p in self.active_players if p.in_hand][0]
             winner.stack += self.pot
             print(f"\n🏆 Hand ends! {winner.name} wins the pot of {self.pot} chips.")
-            return self._get_state(), 1, self.hand_over, {}
+            return
+
+        # --- Check for all-in showdown ---
+        if all(p.all_in or not p.in_hand for p in self.active_players):
+            # All remaining players are all-in or folded: go to showdown
+            self.phase_idx = self.PHASES.index("showdown")
+            self.hand_over = True
+            self.showdown()
+            return
 
         # --- Advance phase or next player ---
         if self._betting_round_complete():
             self._advance_phase()
 
-            if self.phase_idx == len(self.PHASES) - 1:
+            if self.phase_idx == len(self.PHASES) - 1:  # showdown
                 self.showdown()
                 self.hand_over = True
+                self.players_to_act = []  # Always clear at showdown/hand over
             else:
+                # Only reset bets after a full betting round, before dealing new community cards
                 self.reset_bets()
                 if self.phase_idx in [1, 2, 3]:  # flop, turn, river
                     self.deal_community_cards({1: 3, 2: 1, 3: 1}[self.phase_idx])
 
-            # Set current player to first active after dealer
-            self.current_player_idx = (self.dealer_position + 1) % len(self.players)
-            while not self.players[self.current_player_idx].in_hand:
-                self.current_player_idx = (self.current_player_idx + 1) % len(self.players)
+                # Set current player to first active after dealer
+                self.current_player_idx = (self.dealer_position + 1) % len(self.players)
+                while not self.players[self.current_player_idx].in_hand:
+                    self.current_player_idx = (self.current_player_idx + 1) % len(self.players)
+                # Only re-initialize players_to_act if not showdown
+                self.players_to_act = []
+                idx = self.current_player_idx
+                for _ in range(len(self.players)):
+                    player = self.players[idx]
+                    if player.in_hand and not player.all_in:
+                        self.players_to_act.append(player)
+                    idx = (idx + 1) % len(self.players)
+            # --- ADD THIS: Always clear players_to_act at the end of a betting round ---
+            self.players_to_act = []
         else:
             self._advance_to_next_player()
+        
+        print(f"[DEBUG] players_to_act at end: {[p.name for p in self.players_to_act]}")
 
         return self._get_state(), 0, self.hand_over, {}
 
@@ -245,7 +322,22 @@ class PokerGame:
             else:
                 print("Invalid action, try again.")
 
-
+    def _players_to_act_after(self, raiser):
+        """
+        Returns a list of all in-hand, not-all-in players who must act after a raise,
+        in table order, starting with the next player after the raiser, wrapping around,
+        and excluding the raiser.
+        """
+        players = []
+        n = len(self.players)
+        raiser_idx = self.players.index(raiser)
+        idx = (raiser_idx + 1) % n
+        while idx != raiser_idx:
+            p = self.players[idx]
+            if p.in_hand and not p.all_in:
+                players.append(p)
+            idx = (idx + 1) % n
+        return players
 
     def _advance_to_next_player(self):
         num_players = len(self.players)
@@ -257,7 +349,14 @@ class PokerGame:
         self.hand_over = True
 
     def _betting_round_complete(self):
-        # Betting round complete if all active players have equal bets or are all-in
+        # Special case: heads-up preflop, BB must always get a chance to act
+        if len(self.players) == 2 and self.phase_idx == 0:
+            if not self.bb_acted_preflop:
+                return False
+        # Betting round is only complete if all players have acted after the last raise
+        if self.players_to_act:
+            return False
+        # Also check that all active players have equal bets or are all-in
         active_bets = [p.current_bet for p in self.active_players if p.in_hand]
         if len(set(active_bets)) <= 1:
             return True
@@ -309,7 +408,42 @@ class PokerGame:
             print(f"{p.name}: {p.stack} chips")
             p.reset_for_new_hand()
 
+    def handle_fold(self, player):
+        if not isinstance(self.current_bet, int) or not isinstance(player.current_bet, int):
+            raise ActionValidationError("current_bet and player.current_bet must be integers.")
+        to_call = self.current_bet - player.current_bet
+        try:
+            result = validate_fold(in_hand=player.in_hand, to_call=to_call)
+        except ValueError as e:
+            print(f"Invalid fold by {player.name}: {e}")
+            raise ActionValidationError(str(e))
+        player.fold()
+        return {
+            "player": player.name,
+            "can_fold": result["can_fold"],
+            "pot": self.pot,
+            "current_bet": self.current_bet,
+        }
+
+    def handle_check(self, player):
+        if not isinstance(self.current_bet, int) or not isinstance(player.current_bet, int):
+            raise ActionValidationError("current_bet and player.current_bet must be integers.")
+        to_call = self.current_bet - player.current_bet
+        try:
+            result = validate_check(to_call=to_call)
+        except ValueError as e:
+            print(f"Invalid check by {player.name}: {e}")
+            raise ActionValidationError(str(e))
+        return {
+            "player": player.name,
+            "can_check": result["can_check"],
+            "pot": self.pot,
+            "current_bet": self.current_bet,
+        }
+
     def handle_call(self, player):
+        if not isinstance(self.current_bet, int) or not isinstance(player.current_bet, int):
+            raise ActionValidationError("current_bet and player.current_bet must be integers.")
         to_call = self.current_bet - player.current_bet
         if to_call == 0:
             raise ActionValidationError("Cannot call when to_call is zero; should check instead.")
@@ -317,7 +451,7 @@ class PokerGame:
             result = validate_call(player_stack=player.stack, to_call=to_call)
         except ValueError as e:
             print(f"Invalid call by {player.name}: {e}")
-            raise
+            raise ActionValidationError(str(e))
 
         call_amount = result["call_amount"]
         is_all_in = result["is_all_in"]
@@ -338,6 +472,8 @@ class PokerGame:
         }
 
     def handle_raise(self, player, raise_to: int):
+        if not isinstance(self.current_bet, int) or not isinstance(player.current_bet, int):
+            raise ActionValidationError("current_bet and player.current_bet must be integers.")
         to_call = self.current_bet - player.current_bet
         try:
             result = validate_raise(
@@ -351,7 +487,7 @@ class PokerGame:
             )
         except ValueError as e:
             print(f"Invalid raise by {player.name}: {e}")
-            raise
+            raise ActionValidationError(str(e))
 
         raise_amount = raise_to - player.current_bet
         actual_raise = raise_to - self.current_bet
@@ -359,6 +495,9 @@ class PokerGame:
         player.stack -= raise_amount
         player.current_bet = raise_to
         self.pot += raise_amount
+
+        if player.stack == 0:
+            player.all_in = True
 
         # Update game state
         if actual_raise >= self.last_raise_amount:
@@ -371,7 +510,6 @@ class PokerGame:
             if player in self.active_players:
                 self.active_players.remove(player)
 
-        # Optionally return result for testing/logging
         return {
             "player": player.name,
             "raise_to": raise_to,
@@ -430,10 +568,6 @@ class PokerGame:
             idx = (idx + 1) % num_players
             if idx == start_idx:
                 break
-
-        # Optionally append raiser at the end if they need to act last
-        # (depends on your game logic; sometimes raiser acts last after everyone else)
-        # players_to_act.append(raiser)
 
         return players_to_act
 

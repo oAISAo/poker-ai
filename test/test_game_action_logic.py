@@ -15,6 +15,91 @@ def setup_game():
     game.pot = 150
     return game, alice, bob
 
+# --- handle_fold tests ---
+
+def test_fold_when_in_hand_and_to_call_positive():
+    game, alice, _ = setup_game()
+    alice.in_hand = True
+    game.current_bet = 100
+    alice.current_bet = 50
+    result = game.handle_fold(alice)
+    assert result["can_fold"]
+    assert not alice.in_hand
+
+def test_fold_when_in_hand_and_to_call_zero_fails():
+    game, alice, _ = setup_game()
+    alice.in_hand = True
+    game.current_bet = 0
+    alice.current_bet = 0
+    with pytest.raises(ActionValidationError, match="Cannot fold when you can check"):
+        game.handle_fold(alice)
+
+def test_fold_when_not_in_hand_fails():
+    game, alice, _ = setup_game()
+    alice.in_hand = False
+    game.current_bet = 100
+    alice.current_bet = 50
+    with pytest.raises(ActionValidationError, match="Cannot fold if player is not in hand."):
+        game.handle_fold(alice)
+
+def test_fold_with_negative_to_call_fails():
+    game, alice, _ = setup_game()
+    alice.in_hand = True
+    game.current_bet = -10
+    alice.current_bet = 0
+    with pytest.raises(ActionValidationError):
+        game.handle_fold(alice)
+
+def test_fold_with_non_bool_in_hand_fails():
+    game, alice, _ = setup_game()
+    alice.in_hand = 1  # Should be bool
+    game.current_bet = 100
+    alice.current_bet = 50
+    with pytest.raises(ActionValidationError):
+        game.handle_fold(alice)
+
+def test_fold_with_non_integer_to_call_fails():
+    game, alice, _ = setup_game()
+    alice.in_hand = True
+    game.current_bet = "fifty"
+    alice.current_bet = 0
+    with pytest.raises(ActionValidationError):
+        game.handle_fold(alice)
+
+# --- handle_check tests ---
+
+def test_check_when_to_call_zero():
+    game, alice, _ = setup_game()
+    game.current_bet = 0
+    alice.current_bet = 0
+    result = game.handle_check(alice)
+    assert result["can_check"]
+    assert result["pot"] == 150  # pot unchanged
+    assert result["current_bet"] == 50 or result["current_bet"] == 0  # depending on your setup
+
+def test_check_when_to_call_positive_fails():
+    game, alice, _ = setup_game()
+    game.current_bet = 50
+    alice.current_bet = 0
+    # to_call = 50, cannot check
+    with pytest.raises(ActionValidationError, match="Cannot check when there is a bet to call."):
+        game.handle_check(alice)
+
+def test_check_with_negative_to_call_fails():
+    game, alice, _ = setup_game()
+    game.current_bet = -10
+    alice.current_bet = 0
+    with pytest.raises(ActionValidationError):
+        game.handle_check(alice)
+
+def test_check_with_non_integer_to_call_fails():
+    game, alice, _ = setup_game()
+    # Simulate a bug: set current_bet to a string
+    game.current_bet = "zero"
+    alice.current_bet = 0
+    with pytest.raises(ActionValidationError):
+        game.handle_check(alice)
+
 # --- handle_call tests ---
 
 def test_call_with_enough_chips():
@@ -117,6 +202,17 @@ def test_raise_equal_to_call_raises_error():
     game, alice, _ = setup_game()
     with pytest.raises(ActionValidationError):
         game.handle_raise(alice, raise_to=50)  # Same as current bet
+
+def test_player_marked_all_in_after_raise():
+    game, alice, _ = setup_game()
+    game.current_bet = 40  # Make current bet less than Alice's all-in
+    alice.stack = 50
+    alice.current_bet = 0
+    result = game.handle_raise(alice, raise_to=alice.current_bet + alice.stack)
+    assert alice.stack == 0
+    assert alice.current_bet == 50
+    assert alice.all_in is True
+    assert result["is_all_in"]
 
 def test_all_in_below_min_raise_allowed():
     game, alice, _ = setup_game()
