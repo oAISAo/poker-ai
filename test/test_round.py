@@ -9,15 +9,22 @@ def test_bug_raise_resets_betting_round(monkeypatch):
     class TestPlayer(Player):
         def __init__(self, name):
             super().__init__(name, stack=1000, is_human=False)
-            self.action_sequence = ["call", "raise 50", "call", "check"]
+            self.action_sequence = ["call", "raise", "call", "check"]
             self.action_index = 0
 
         def decide_action(self, to_call, community_cards):
             if self.action_index < len(self.action_sequence):
                 action = self.action_sequence[self.action_index]
                 self.action_index += 1
-                return "raise" if action.startswith("raise") else action
-            return "check"
+                if action == "raise":
+                    return "raise"
+                elif action == "call":
+                    return "call" if to_call > 0 else "check"
+                elif action == "check":
+                    return "check" if to_call == 0 else "call"
+                else:
+                    return action
+            return "check" if to_call == 0 else "call"
 
     players = [TestPlayer("P1"), TestPlayer("P2"), TestPlayer("P3")]
     game = PokerGame(players, game_mode=GameMode.AI_VS_AI)
@@ -38,7 +45,11 @@ def test_bug_raise_resets_betting_round(monkeypatch):
         to_call = game.current_bet - player.current_bet
 
         action = player.decide_action(to_call, game.community_cards)
-        raise_amount = 50 if action == "raise" else 0
+        if action == "raise":
+            # Always raise to the minimum allowed amount
+            raise_amount = game.current_bet + game.last_raise_amount
+        else:
+            raise_amount = 0
 
         _, _, done, _ = game.step(action, raise_amount=raise_amount)
 
@@ -46,33 +57,26 @@ def test_bug_raise_resets_betting_round(monkeypatch):
     assert total_bets >= game.current_bet * len(players)
     assert all(p.in_hand for p in players)
 
-
 def test_human_raise_with_mocked_cards():
-    from engine.game import PokerGame, GameMode
-    from engine.player import Player
 
-    # Mock deck to fix hole cards and community cards
     class MockDeck:
         def __init__(self):
-            # Human hole cards (strong hand)
             self.cards = [
                 Card('A', '♠'), Card('K', '♠'),  # Human hole cards
                 Card('2', '♦'), Card('7', '♣'),  # Bot hole cards
-                # Community cards (very strong for human)
                 Card('A', '♦'), Card('K', '♦'), Card('Q', '♦'),
                 Card('J', '♦'), Card('T', '♦')
             ]
             self.index = 0
 
         def shuffle(self):
-            pass  # No shuffle for deterministic order
+            pass
 
         def draw(self, n):
             drawn = self.cards[self.index:self.index + n]
             self.index += n
             return drawn
 
-    # Human action: raise once, then call/check
     def mock_human_action_factory():
         raised_once = [False]
         def action(player, to_call):
@@ -94,29 +98,37 @@ def test_human_raise_with_mocked_cards():
     ]
     game = PokerGame(players, game_mode=GameMode.HUMAN_VS_AI, human_action_callback=mock_human_action)
 
+    # Only call reset_for_new_hand with the mock deck, do NOT call play_hand()
     game.reset_for_new_hand(deck=MockDeck())
-    game.dealer_position = 0  # (optional, if you want to fix dealer)
-    game.play_hand()
+    game.dealer_position = 0
 
-    # After raising once 50 chips, human stack should have decreased by at least 50 chips from blinds + raise
-    # Since human has the best hand, stack should be > 1000 after winning the pot
-    assert players[0].stack > 1000, f"Expected human stack > 1000 but got {players[0].stack}"
+    done = False
+    while not done:
+        player = game.players[game.current_player_idx]
+        to_call = game.current_bet - player.current_bet
+        if player.is_human:
+            action, raise_amount = mock_human_action(player, to_call)
+        else:
+            action = "call" if to_call > 0 else "check"
+            raise_amount = 0
+        game.step(action, raise_amount=raise_amount)
+        done = game.hand_over
 
-    # Pot should be at least the raise amount + blinds
-    assert game.pot >= 50
-
-    # Bot should lose chips
-    assert players[1].stack < 1000, f"Expected bot stack < 1000 but got {players[1].stack}"
+    # Both players should have the same stack as they started with (pot split)
+    assert players[0].stack == 1000, f"Expected human stack == 1000 but got {players[0].stack}"
+    assert players[1].stack == 1000, f"Expected bot stack == 1000 but got {players[1].stack}"
 
 def test_bug_all_in_sets_flag(monkeypatch):
     class AllInTestPlayer(Player):
         def decide_action(self, to_call, community_cards):
             if to_call > self.stack:
                 return "fold"
-            elif to_call == self.stack:
+            elif to_call == self.stack and to_call > 0:
                 return "call"  # All in
-            else:
+            elif to_call > 0:
                 return "call"
+            else:
+                return "check"
 
     ai1 = AllInTestPlayer("AI1", stack=20, is_human=False)
     ai2 = AllInTestPlayer("AI2", stack=1000, is_human=False)
@@ -137,7 +149,8 @@ def test_bug_all_in_sets_flag(monkeypatch):
         player = game.players[game.current_player_idx]
         to_call = game.current_bet - player.current_bet
         action = player.decide_action(to_call, game.community_cards)
-        _, _, done, _ = game.step(action)
+        game.step(action)
+        done = game.hand_over
 
     assert ai1.all_in is True
     assert game.pot >= 20

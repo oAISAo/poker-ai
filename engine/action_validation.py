@@ -74,7 +74,7 @@ def validate_raise(*, raise_to, player_stack, to_call, current_bet, min_raise, b
     # Opening bet (to_call == 0)
     if to_call == 0:
         if raise_to < current_bet + big_blind:
-            raise ActionValidationError(f"Minimum raise is to {current_bet + big_blind}")
+            raise ActionValidationError(f"Opening bet must be at least the big blind ({big_blind}).")
     else:
         raise_amount = raise_to - current_bet
         if raise_amount < min_raise:

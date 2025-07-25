@@ -53,7 +53,6 @@ def hand_rank(cards):
         return result[:5]
 
     flush = None
-    flush_cards = []
     for suit in set(suits):
         suited_cards = [card for card in cards if card.suit == suit]
         if len(suited_cards) >= 5:
@@ -82,25 +81,25 @@ def hand_rank(cards):
                     if card_rank(c) == r and c not in straight_flush_cards:
                         straight_flush_cards.append(c)
                         break
-            return (8, sf_high), straight_flush_cards
+            return (8, sf_high), [card_rank(c) for c in straight_flush_cards]
 
     # Four of a kind
     if counts[0] == 4:
         four_rank = sorted_ranks[0]
         kicker = max(r for r in ranks if r != four_rank)
         cards_out = get_cards_by_ranks([four_rank, kicker])
-        return (7, four_rank, kicker), cards_out
+        return (7, four_rank, kicker), [card_rank(c) for c in cards_out]
 
     # Full house
     if counts[0] == 3 and counts[1] >= 2:
         three_rank = sorted_ranks[0]
         pair_rank = sorted_ranks[1]
         cards_out = get_cards_by_ranks([three_rank, pair_rank])
-        return (6, three_rank, pair_rank), cards_out
+        return (6, three_rank, pair_rank), [card_rank(c) for c in cards_out]
 
     # Flush
     if flush:
-        return (5, *[card_rank(c) for c in flush[:5]]), flush[:5]
+        return (5, *[card_rank(c) for c in flush[:5]]), [card_rank(c) for c in flush[:5]]
 
     # Straight
     straight_high = straight(ranks)
@@ -114,14 +113,14 @@ def hand_rank(cards):
                     straight_cards.append(c)
                     used.add(c)
                     break
-        return (4, straight_high), straight_cards
+        return (4, straight_high), [card_rank(c) for c in straight_cards]
 
     # Three of a kind
     if counts[0] == 3:
         three_rank = sorted_ranks[0]
         kickers = sorted([r for r in ranks if r != three_rank], reverse=True)[:2]
         cards_out = get_cards_by_ranks([three_rank] + kickers)
-        return (3, three_rank, *kickers), cards_out
+        return (3, three_rank, *kickers), [card_rank(c) for c in cards_out]
 
     # Two pair
     if counts[0] == 2 and counts[1] == 2:
@@ -129,14 +128,14 @@ def hand_rank(cards):
         low_pair = sorted_ranks[1]
         kicker = max(r for r in ranks if r != high_pair and r != low_pair)
         cards_out = get_cards_by_ranks([high_pair, low_pair, kicker])
-        return (2, high_pair, low_pair, kicker), cards_out
+        return (2, high_pair, low_pair, kicker), [card_rank(c) for c in cards_out]
 
     # One pair
     if counts[0] == 2:
         pair_rank = sorted_ranks[0]
         kickers = sorted([r for r in ranks if r != pair_rank], reverse=True)[:3]
         cards_out = get_cards_by_ranks([pair_rank] + kickers)
-        return (1, pair_rank, *kickers), cards_out
+        return (1, pair_rank, *kickers), [card_rank(c) for c in cards_out]
 
     # High card
-    return (0, *ranks[:5]), sorted(cards, key=card_rank, reverse=True)[:5]
+    return (0, *ranks[:5]), [card_rank(c) for c in sorted(cards, key=card_rank, reverse=True)[:5]]

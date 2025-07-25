@@ -10,14 +10,14 @@ def test_high_card():
     cards = make_cards([("A", "♠"), ("K", "♣"), ("Q", "♦"), ("J", "♥"), ("9", "♠"), ("3", "♦"), ("2", "♣")])
     rank, best = evaluate_hand(cards)
     assert rank[0] == 0  # High card
-    assert [c.rank for c in best] == ["A", "K", "Q", "J", "9"]
+    assert best == [14, 13, 12, 11, 9]
 
 def test_one_pair():
     cards = make_cards([("K", "♠"), ("K", "♣"), ("Q", "♦"), ("J", "♥"), ("9", "♠"), ("3", "♦"), ("2", "♣")])
     rank, best = evaluate_hand(cards)
     assert rank[0] == 1  # One pair
     assert rank[1] == 13  # Pair of Kings
-    assert [c.rank for c in best].count("K") == 2
+    assert best.count(13) == 2
 
 def test_two_pair():
     cards = make_cards([("K", "♠"), ("K", "♣"), ("Q", "♦"), ("Q", "♥"), ("9", "♠"), ("3", "♦"), ("2", "♣")])
@@ -25,33 +25,38 @@ def test_two_pair():
     assert rank[0] == 2  # Two pair
     assert rank[1] == 13  # High pair Kings
     assert rank[2] == 12  # Low pair Queens
-    assert [c.rank for c in best].count("K") == 2
-    assert [c.rank for c in best].count("Q") == 2
+    assert best.count(13) == 2
+    assert best.count(12) == 2
 
 def test_three_of_a_kind():
     cards = make_cards([("K", "♠"), ("K", "♣"), ("K", "♦"), ("J", "♥"), ("9", "♠"), ("3", "♦"), ("2", "♣")])
     rank, best = evaluate_hand(cards)
     assert rank[0] == 3
     assert rank[1] == 13
-    assert [c.rank for c in best].count("K") == 3
+    assert best.count(13) == 3
 
 def test_straight_normal():
     cards = make_cards([("9", "♠"), ("8", "♣"), ("7", "♦"), ("6", "♥"), ("5", "♠"), ("3", "♦"), ("2", "♣")])
     rank, best = evaluate_hand(cards)
     assert rank[0] == 4  # Straight
     assert rank[1] == 9   # Highest card 9
+    assert best == [9, 8, 7, 6, 5]
 
 def test_straight_wheel():
     cards = make_cards([("A", "♠"), ("2", "♣"), ("3", "♦"), ("4", "♥"), ("5", "♠"), ("9", "♦"), ("7", "♣")])
     rank, best = evaluate_hand(cards)
     assert rank[0] == 4  # Straight
     assert rank[1] == 5  # Highest card 5 for wheel straight
+    assert best == [5, 4, 3, 2, 14]
 
 def test_flush():
     cards = make_cards([("A", "♠"), ("K", "♠"), ("Q", "♠"), ("J", "♠"), ("9", "♠"), ("3", "♦"), ("2", "♣")])
     rank, best = evaluate_hand(cards)
     assert rank[0] == 5
-    assert all(c.suit == "♠" for c in best)
+    # All best cards should be spades
+    spade_ranks = [card_rank(c) for c in cards if c.suit == "♠"]
+    assert all(r in spade_ranks for r in best)
+    assert best == sorted(spade_ranks, reverse=True)[:5]
 
 def test_full_house():
     cards = make_cards([("K", "♠"), ("K", "♣"), ("K", "♦"), ("J", "♥"), ("J", "♠"), ("3", "♦"), ("2", "♣")])
@@ -59,24 +64,29 @@ def test_full_house():
     assert rank[0] == 6
     assert rank[1] == 13  # Trips Kings
     assert rank[2] == 11  # Pair Jacks
+    assert best.count(13) == 3
+    assert best.count(11) == 2
 
 def test_four_of_a_kind():
     cards = make_cards([("K", "♠"), ("K", "♣"), ("K", "♦"), ("K", "♥"), ("9", "♠"), ("3", "♦"), ("2", "♣")])
     rank, best = evaluate_hand(cards)
     assert rank[0] == 7
     assert rank[1] == 13  # Quads Kings
+    assert best.count(13) == 4
 
 def test_straight_flush():
     cards = make_cards([("9", "♠"), ("8", "♠"), ("7", "♠"), ("6", "♠"), ("5", "♠"), ("3", "♦"), ("2", "♣")])
     rank, best = evaluate_hand(cards)
     assert rank[0] == 8
     assert rank[1] == 9
+    assert best == [9, 8, 7, 6, 5]
 
 def test_best_hand_from_seven_cards():
     cards = make_cards([("9", "♠"), ("8", "♠"), ("7", "♠"), ("6", "♠"), ("5", "♠"), ("A", "♦"), ("A", "♣")])
     rank, best = evaluate_hand(cards)
     assert rank[0] == 8  # Straight flush beats pair of aces
     assert rank[1] == 9
+    assert best == [9, 8, 7, 6, 5]
 
 def test_tie_breakers():
     # Compare two pair with different kickers
@@ -100,8 +110,9 @@ def test_ace_low_flush():
     ])
     rank, best = evaluate_hand(cards)
     assert rank[0] == 5  # Flush
-    assert all(c.suit == "♠" for c in best)
-    assert "A" in [c.rank for c in best]
+    spade_ranks = [card_rank(c) for c in cards if c.suit == "♠"]
+    assert all(r in spade_ranks for r in best)
+    assert 14 in best  # Ace present
 
 def test_multiple_flushes():
     cards = make_cards([
@@ -111,9 +122,9 @@ def test_multiple_flushes():
     ])
     rank, best = evaluate_hand(cards)
     assert rank[0] == 5
-    # Flush should be spades (highest suit flush)
-    assert all(c.suit == "♠" for c in best)
-    assert "A" in [c.rank for c in best]
+    spade_ranks = [card_rank(c) for c in cards if c.suit == "♠"]
+    assert all(r in spade_ranks for r in best)
+    assert 14 in best  # Ace present
 
 def test_full_house_multiple_triplets():
     cards = make_cards([
@@ -123,9 +134,8 @@ def test_full_house_multiple_triplets():
     ])
     rank, best = evaluate_hand(cards)
     assert rank[0] == 6  # Full house
-    # Should pick highest trips (5s) and next trips as pair (3s)
-    assert rank[1] == 5
-    assert rank[2] == 3
+    assert best.count(5) == 3
+    assert best.count(3) == 2
 
 def test_four_of_a_kind_kicker():
     cards = make_cards([
@@ -135,8 +145,8 @@ def test_four_of_a_kind_kicker():
     rank, best = evaluate_hand(cards)
     assert rank[0] == 7
     assert rank[1] == 7
-    # Kicker should be Ace highest
-    assert rank[2] == 14
+    assert best.count(7) == 4
+    assert 14 in best  # Ace kicker
 
 def test_straight_flush_wheel():
     cards = make_cards([
@@ -146,6 +156,7 @@ def test_straight_flush_wheel():
     rank, best = evaluate_hand(cards)
     assert rank[0] == 8
     assert rank[1] == 5  # Ace-low straight flush highest card is 5
+    assert best == [5, 4, 3, 2, 14]
 
 def test_tie_breakers_kickers():
     cards1 = make_cards([
@@ -165,5 +176,12 @@ def test_flush_selects_top_five():
     ])
     rank, best = evaluate_hand(cards)
     assert rank[0] == 5
-    # Best flush cards are top 5 highest cards
-    assert [c.rank for c in best] == ["A", "K", "Q", "J", "9"]
+    assert best == [14, 13, 12, 11, 9]
+
+# Helper for rank conversion
+def card_rank(card):
+    RANK_MAP = {
+        '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, '9': 9,
+        'T': 10, 'J': 11, 'Q': 12, 'K': 13, 'A': 14,
+    }
+    return RANK_MAP[card.rank]

@@ -18,7 +18,7 @@ class PokerGame:
         self.small_blind = small_blind
         self.big_blind = big_blind
         self.game_mode = game_mode
-        self.human_action_callback = human_action_callback  # <-- add this line
+        self.human_action_callback = human_action_callback
         self.deck = None
         self.community_cards = []
         self.pot = 0
@@ -82,7 +82,11 @@ class PokerGame:
         self.last_raise_amount
 
     def rotate_dealer(self):
-        self.dealer_position = (self.dealer_position + 1) % len(self.players)
+        n = len(self.players)
+        for _ in range(n):
+            self.dealer_position = (self.dealer_position + 1) % n
+            if self.players[self.dealer_position].stack > 0:
+                break
 
     def post_blinds(self):
         if len(self.players) == 2:
@@ -139,10 +143,22 @@ class PokerGame:
         - action (str): "fold", "call", "check", or "raise"
         - raise_amount (int): If action == "raise", this is the total amount player wants to have on the table after raising.
         """
+
+        print(f"[DEBUG] Entering step: phase_idx={self.phase_idx}, players_to_act={[p.name for p in self.players_to_act]}, action={action}")
+
+        # If players_to_act is empty and not showdown, re-initialize for new round
+        if not self.players_to_act and self.phase_idx < self.PHASES.index("showdown"):
+            self.players_to_act = [p for p in self.players if p.in_hand and not p.all_in]
+            if self.players_to_act:
+                self.current_player_idx = self.players.index(self.players_to_act[0])
+
         if self.hand_over:
             raise RuntimeError("Hand is over. Please reset for new hand.")
 
-        print(f"[DEBUG] players_to_act at start: {[p.name for p in self.players_to_act]}")
+        # Defensive: If betting round is already complete, do not process another action
+        if self._betting_round_complete():
+            print("[DEBUG] Betting round complete at start of step, returning early.")
+            return self._get_state(), 0, self.hand_over, {}
 
         player = self.players[self.current_player_idx]
 
@@ -210,20 +226,19 @@ class PokerGame:
             print("[DEBUG] players_to_act after cleanup:", [p.name for p in self.players_to_act])
 
         # --- Check for win (everyone else folded) ---
-        if len([p for p in self.active_players if p.in_hand]) == 1:
-            # Only one player not folded: award pot
+        if len([p for p in self.active_players if p.in_hand]) == 1 and not self.players_to_act:
             self.hand_over = True
-            winner = [p for p in self.active_players if p.in_hand][0]
+            winner = next(p for p in self.active_players if p.in_hand)
             winner.stack += self.pot
             print(f"\n🏆 Hand ends! {winner.name} wins the pot of {self.pot} chips.")
             return
 
         # --- Check for all-in showdown ---
-        if all(p.all_in or not p.in_hand for p in self.active_players):
+        if all(p.all_in or not p.in_hand for p in self.active_players) and not self.players_to_act:
             # All remaining players are all-in or folded: go to showdown
             self.phase_idx = self.PHASES.index("showdown")
-            self.hand_over = True
             self.showdown()
+            self.hand_over = True
             return
 
         # --- Advance phase or next player ---
@@ -244,20 +259,12 @@ class PokerGame:
                 self.current_player_idx = (self.dealer_position + 1) % len(self.players)
                 while not self.players[self.current_player_idx].in_hand:
                     self.current_player_idx = (self.current_player_idx + 1) % len(self.players)
-                # Only re-initialize players_to_act if not showdown
+                # After phase advance, players_to_act should be empty.
                 self.players_to_act = []
-                idx = self.current_player_idx
-                for _ in range(len(self.players)):
-                    player = self.players[idx]
-                    if player.in_hand and not player.all_in:
-                        self.players_to_act.append(player)
-                    idx = (idx + 1) % len(self.players)
-            # --- ADD THIS: Always clear players_to_act at the end of a betting round ---
-            self.players_to_act = []
         else:
             self._advance_to_next_player()
         
-        print(f"[DEBUG] players_to_act at end: {[p.name for p in self.players_to_act]}")
+        print(f"[DEBUG] Exiting step: phase_idx={self.phase_idx}, players_to_act={[p.name for p in self.players_to_act]}")
 
         return self._get_state(), 0, self.hand_over, {}
 
@@ -364,7 +371,9 @@ class PokerGame:
 
     def _advance_phase(self):
         self.phase_idx += 1
-        print(f"Advancing to phase: {self.PHASES[self.phase_idx]}")
+        print(f"[DEBUG] Advancing to phase: {self.PHASES[self.phase_idx]} (phase_idx={self.phase_idx})")
+        # Reset bets for new round
+        self.reset_bets()
 
     def _get_state(self):
         # Return a simple dict representing game state for current player
@@ -457,6 +466,7 @@ class PokerGame:
         is_all_in = result["is_all_in"]
 
         player.stack -= call_amount
+        player.total_contributed += call_amount
         player.current_bet += call_amount
         self.pot += call_amount
 
@@ -493,6 +503,7 @@ class PokerGame:
         actual_raise = raise_to - self.current_bet
 
         player.stack -= raise_amount
+        player.total_contributed += raise_amount
         player.current_bet = raise_to
         self.pot += raise_amount
 
@@ -523,32 +534,67 @@ class PokerGame:
 
     def showdown(self):
         print("\n--- Showdown ---")
-        winners = [p for p in self.active_players if p.in_hand]
-        if not winners:
+        in_hand_players = [p for p in self.players if p.in_hand or p.all_in]
+        if not in_hand_players:
             print("No winners found.")
             return
 
-        best_rank = None
-        best_players = []
+        # Use total_contributed for side pot calculation
+        contributions = {p: p.total_contributed for p in self.players}
+        pots = []
+        bet_levels = sorted(set([amt for amt in contributions.values() if amt > 0]))
+        prev = 0
+        remaining_players = set(self.players)
+        for level in bet_levels:
+            pot_players = [p for p in remaining_players if contributions[p] >= level]
+            if not pot_players:
+                continue
+            pot_size = (level - prev) * len(pot_players)
+            pots.append({"amount": pot_size, "players": pot_players.copy()})
+            prev = level
+            for p in list(remaining_players):
+                if contributions[p] == level:
+                    remaining_players.remove(p)
 
-        for player in winners:
-            full_hand = player.hole_cards + self.community_cards
-            rank, best_hand = hand_rank(full_hand)
-            best_hand_str = ' '.join(str(card) for card in best_hand)
-            print(f"{player.name}: {rank} with [{best_hand_str}]")
+        total_pot = sum(pot["amount"] for pot in pots)
+        if total_pot != self.pot:
+            print(f"[WARNING] Pot mismatch: calculated {total_pot}, actual {self.pot}")
 
-            if best_rank is None or rank > best_rank:
-                best_rank = rank
-                best_players = [player]
-            elif rank == best_rank:
-                best_players.append(player)
+        hand_ranks = {}
+        for p in self.players:
+            if p.in_hand or p.all_in:
+                try:
+                    hand_ranks[p] = hand_rank(p.hole_cards + self.community_cards)
+                except Exception as e:
+                    print(f"Error evaluating hand for {p.name}: {e}")
+                    hand_ranks[p] = None
 
-        split_pot = self.pot // len(best_players)
-        for winner in best_players:
-            print(f"{winner.name} wins {split_pot} chips")
-            winner.stack += split_pot
-
-        print("Hand complete.")
+        for i, pot in enumerate(pots):
+            eligible = [p for p in pot["players"] if (p.in_hand or p.all_in)]
+            if not eligible:
+                print(f"No eligible players for pot {i+1}, skipping.")
+                continue
+            best_rank = None
+            winners = []
+            for p in eligible:
+                rank = hand_ranks.get(p)
+                if rank is None:
+                    continue
+                if best_rank is None or rank > best_rank:
+                    best_rank = rank
+                    winners = [p]
+                elif rank == best_rank:
+                    winners.append(p)
+            if not winners:
+                print(f"No winners for pot {i+1}, skipping.")
+                continue
+            split = pot["amount"] // len(winners)
+            remainder = pot["amount"] % len(winners)
+            for j, p in enumerate(winners):
+                award = split + (1 if j < remainder else 0)
+                p.stack += award
+                print(f"{p.name} wins {award} chips from pot {i+1} (side pot)" if len(pots) > 1 else f"{p.name} wins {award} chips.")
+        self.pot = 0
 
     def _players_to_act_after(self, raiser):
         """
