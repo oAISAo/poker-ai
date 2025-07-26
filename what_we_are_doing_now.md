@@ -2,27 +2,6 @@
 
 # Poker AI Agent Development Plan
 
-
-PRECONDITION:
-
-1. Expand Test Coverage for Current Environment
-Add more edge case tests to ensure flawless single-table logic:
-
-Test all-in and split pot scenarios.
-Test player elimination and placement rewards for every possible order.
-Test blind increases and stack updates for long tournaments.
-Test action mask correctness for every possible player state.
-Test environment reset after every possible terminal state.
-Test for correct dealer/SB/BB rotation after each hand.
-2. Design Multi-Table Tournament Environment
-Key requirements: 
-(+ also change the environment to simulate a normal poker tournament with th blind structure and blinds increasing every NO number of hands)
-Support N tables (e.g., 11 tables for 99 players, max 9 per table).
-Track which players are at which table.
-When a table drops below a threshold (e.g., 7 players), move players from other tables to balance.
-Merge tables as the tournament progresses (e.g., down to 1 final table).
-Ensure fair seat assignment and blind rotation after table balancing.
-Track player elimination and placement across all tables.
 3. Implement Multi-Table Tournament Logic
 Create a new MultiTableTournamentEnv class.
 Each table is a PokerTournamentEnv instance.
@@ -39,11 +18,6 @@ Test placement rewards for all players.
 5. Teach Sharky to Play Multi-Table Tournaments
 Update agent training scripts to support multi-table environments.
 Add tests for agent behavior in multi-table scenarios.
-6. Recommended Immediate Actions
-Expand single-table tests as described above.
-Design the API and data structures for multi-table tournament logic.
-Implement a basic multi-table environment and add balancing/merging logic.
-Write tests for every new feature.
 
 
 ## Phase 1: Sharky Self-Play Evolution
