@@ -50,23 +50,43 @@ class PokerGame:
         self.bb_acted_preflop = False
         self.players_to_act = []
 
+        # Reset player states
         for player in self.players:
-            player.reset_for_new_hand()
-            player.stack = max(player.stack, 0)
-
-        self.active_players = [p for p in self.players if p.stack > 0]
-        if len(self.active_players) < 2:
-            raise RuntimeError("Not enough players with chips to continue.")
+            player.current_bet = 0
+            player.hole_cards = []
+            player.in_hand = True
+            player.all_in = False
 
         self.players_who_posted_blinds = set()
         self.post_blinds()
+
+        # --- Mark all-in and eliminated states after blinds ---
+        for player in self.players:
+            if player.stack == 0 and player.current_bet > 0:
+                # All-in after posting blind
+                player.in_hand = True
+                player.all_in = True
+            elif player.stack == 0 and player.current_bet == 0:
+                # Eliminated before posting blind
+                player.in_hand = False
+                player.all_in = False
+            else:
+                player.in_hand = True
+                player.all_in = False
+
+        self.active_players = [p for p in self.players if p.in_hand and (p.stack > 0 or p.current_bet > 0)]
+        if len(self.active_players) < 2:
+            raise RuntimeError("Not enough players with chips to continue.")
+
         self.deal_hole_cards()
 
-        # --- HEADS-UP LOGIC: SB (dealer) acts first preflop ---
-        if len(self.players) == 2:
-            # SB is dealer, BB is next
-            sb_idx = self.dealer_position
-            bb_idx = (self.dealer_position + 1) % 2
+        # --- Set current_player_idx and players_to_act based on number of active players ---
+        if len(self.active_players) == 2:
+            # Heads-up: SB (dealer) acts first preflop
+            active_indices = [i for i, p in enumerate(self.players) if p.in_hand and (p.stack > 0 or p.current_bet > 0)]
+            dealer_pos = self.dealer_position
+            sb_idx = active_indices[0] if active_indices[0] == dealer_pos else active_indices[1]
+            bb_idx = active_indices[1] if active_indices[0] == dealer_pos else active_indices[0]
             self.current_player_idx = sb_idx
             self.players_to_act = [self.players[sb_idx], self.players[bb_idx]]
         else:
@@ -82,7 +102,6 @@ class PokerGame:
                     break
                 idx = (idx + 1) % len(self.players)
             self.current_player_idx = first_to_act
-            pass
 
     def rotate_dealer(self):
         n = len(self.players)
@@ -92,16 +111,34 @@ class PokerGame:
                 break
 
     def post_blinds(self):
-        if len(self.players) == 2:
-            # Heads-up: dealer is SB, other is BB
-            sb_pos = self.dealer_position
-            bb_pos = (self.dealer_position + 1) % 2
-        else:
-            sb_pos = (self.dealer_position + 1) % len(self.players)
-            bb_pos = (self.dealer_position + 2) % len(self.players)
+        active_indices = [i for i, p in enumerate(self.players) if p.stack > 0]
+        num_active = len(active_indices)
+        if num_active < 2:
+            raise RuntimeError("Not enough players with chips to continue.")
 
-        sb_player = self.players[sb_pos]
-        bb_player = self.players[bb_pos]
+        dealer_pos = self.dealer_position
+
+        if num_active == 2:
+            # Heads-up: dealer is SB, next is BB
+            dealer_pos = self.dealer_position
+            sb_idx = active_indices[0] if active_indices[0] == dealer_pos else active_indices[1]
+            bb_idx = active_indices[1] if active_indices[0] == dealer_pos else active_indices[0]
+        else:
+            # More than 2: SB is next active after dealer, BB is next after SB
+            dealer_pos = self.dealer_position
+            sb_idx = None
+            bb_idx = None
+            for offset in range(1, len(self.players) + 1):
+                idx = (dealer_pos + offset) % len(self.players)
+                if self.players[idx].stack > 0:
+                    if sb_idx is None:
+                        sb_idx = idx
+                    elif bb_idx is None:
+                        bb_idx = idx
+                        break
+
+        sb_player = self.players[sb_idx]
+        bb_player = self.players[bb_idx]
 
         sb_amount = min(sb_player.stack, self.small_blind)
         sb_player.bet_chips(sb_amount, suppress_log=True)
@@ -124,10 +161,12 @@ class PokerGame:
         self.players_who_posted_blinds = {sb_player.name, bb_player.name}
 
     def deal_hole_cards(self):
-        for player in self.active_players:
-            hole_cards = self.deck.draw(2)
-            player.deal_hole_cards(hole_cards)
-            print(f"{player.name} was dealt: {[str(card) for card in hole_cards]}")
+        for player in self.players:
+            if player.in_hand and player.stack > 0:
+                player.hole_cards = self.deck.draw(2)
+                print(f"{player.name} was dealt: {player.hole_cards}")
+            else:
+                player.hole_cards = []
 
     def deal_community_cards(self, number):
         cards = self.deck.draw(number)
@@ -194,6 +233,14 @@ class PokerGame:
         if action == "fold":
             result = self.handle_fold(player, to_call)
             print(f"{player.name} folds.")
+            if sum(p.in_hand and p.stack > 0 for p in self.players) == 1:
+                # Only one player remains in hand with chips, award pot and end hand
+                winner = next(p for p in self.players if p.in_hand and p.stack > 0)
+                winner.stack += self.pot
+                print(f"{winner.name} wins the pot of {self.pot} by default (all others folded).")
+                self.pot = 0
+                self.hand_over = True
+                return
 
         elif action == "call":
             result = self.handle_call(player, to_call)
@@ -228,6 +275,10 @@ class PokerGame:
             if not p.in_hand or p.all_in:
                 print(f"[DEBUG] Removing {p.name} from players_to_act (folded or all-in)")
                 self.players_to_act.remove(p)
+
+        # If players_to_act is now empty or only contains non-actionable players, clear it and trigger hand termination
+        if not any(p.in_hand and not p.all_in and p.stack > 0 for p in self.players_to_act):
+            self.players_to_act = []
 
         # --- HAND TERMINATION LOGIC ---
         active_in_hand = [p for p in self.players if p.in_hand and p.stack > 0]
@@ -298,6 +349,19 @@ class PokerGame:
             self._advance_to_next_player()
         
         print(f"[DEBUG] Exiting step: phase_idx={self.phase_idx}, players_to_act={[p.name for p in self.players_to_act]}")
+
+        # --- Final catch-all: if no legal actions remain, end the hand ---
+        active_in_hand = [p for p in self.players if p.in_hand and p.stack > 0]
+        if (
+            not self.players_to_act and
+            (
+                len(active_in_hand) == 0 or
+                all(p.all_in or not p.in_hand or p.stack == 0 for p in self.players)
+            )
+        ):
+            self.hand_over = True
+            print("[DEBUG] Hand over: no legal actions remain, all players are all-in, folded, or eliminated")
+            return self._get_state(), 0, self.hand_over, {}
 
         return self._get_state(), 0, self.hand_over, {}
 

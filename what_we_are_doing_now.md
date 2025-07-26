@@ -15,8 +15,8 @@ Test action mask correctness for every possible player state.
 Test environment reset after every possible terminal state.
 Test for correct dealer/SB/BB rotation after each hand.
 2. Design Multi-Table Tournament Environment
-Key requirements:
-
+Key requirements: 
+(+ also change the environment to simulate a normal poker tournament with th blind structure and blinds increasing every NO number of hands)
 Support N tables (e.g., 11 tables for 99 players, max 9 per table).
 Track which players are at which table.
 When a table drops below a threshold (e.g., 7 players), move players from other tables to balance.

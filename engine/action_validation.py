@@ -64,6 +64,7 @@ def validate_raise(*, raise_to, player_stack, to_call, current_bet, min_raise, b
     if is_all_in:
         if raise_to <= current_bet:
             raise ActionValidationError("All-in must be a raise above the current bet.")
+        # All-in raises are allowed even if below minimum raise amount
         return RaiseValidationResult(is_all_in=True, raise_amount=raise_to - current_bet, amount_to_put_in=amount_to_put_in)
 
     # Now check if player is trying to put in more than their stack (not all-in)
