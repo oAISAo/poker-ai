@@ -1,23 +1,25 @@
 🟡 What’s In Progress / Next Steps
 
-1. Reinforcement Learning Agent Foundation
-Goal: Implement a general-purpose RL agent class (for Sharky and future agents).
-Action:
-Design a BaseRLAgent in agents that can interface with Gym environments.
-Define act, learn, and reset methods.
-Integrate with Stable Baselines3 (or your preferred RL library).
+1. Tournament Structure
+Start with 9 players, each with a starting stack (e.g., 1000 chips).
+Play hands in sequence until only one player remains (all others are eliminated).
+Track player elimination order for placement-based rewards.
+2. Blinds Schedule
+Define a blinds schedule (e.g., every X hands, increase blinds).
+Update the environment/game to increase blinds at the right intervals.
+3. Environment Changes
+Tournament loop:
+After each hand, check for eliminated players (stack == 0).
+Remove eliminated players from the game.
+Continue until one player remains.
+Blinds logic:
+At the start of each hand, check if it’s time to increase blinds.
+Update small_blind and big_blind accordingly.
+Placement tracking:
+Record the order in which players are eliminated.
+Assign rewards at the end based on placement (e.g., 1st place = highest reward, 2nd = less, etc.).
 
-2. Gym-Compatible Poker Environment
-Goal: Make poker_env.py a proper OpenAI Gym environment.
-Action:
-Implement reset, step, render, and observation_space/action_space.
-Ensure it can run self-play and agent-vs-agent matches.
-Add tests for environment edge cases.
 
-3. Training Scripts
-Goal: Enable training and evaluation of agents.
-Action:
-Create train_agents.py to run training loops.
 Add CLI/config options for agent selection, training length, and evaluation.
 Log results to logger.py.
 

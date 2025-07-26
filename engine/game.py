@@ -1,5 +1,6 @@
 # poker-ai/engine/game.py
 
+from engine import player
 from engine.cards import Deck
 from engine.player import Player
 from engine.hand_evaluator import hand_rank
@@ -173,6 +174,7 @@ class PokerGame:
             return self._get_state(), 0, self.hand_over, {}
 
         to_call = self.current_bet - player.current_bet
+        to_call = max(0, to_call)  # Ensure non-negative
 
         # Handle human input if needed
         if player.is_human and action is None:
@@ -186,19 +188,19 @@ class PokerGame:
         # --- ACTIONS ---
 
         if action == "fold":
-            result = self.handle_fold(player)
+            result = self.handle_fold(player, to_call)
             print(f"{player.name} folds.")
 
         elif action == "call":
-            result = self.handle_call(player)
+            result = self.handle_call(player, to_call)
             print(f"{player.name} calls {result['call_amount']}{' (all-in)' if result['is_all_in'] else ''}.")
 
         elif action == "check":
-            result = self.handle_check(player)
+            result = self.handle_check(player, to_call)
             print(f"{player.name} checks.")
 
         elif action == "raise":
-            self.handle_raise(player, raise_to=raise_amount)
+            self.handle_raise(player, raise_to=raise_amount, to_call=to_call)
             # After a raise, set players_to_act to all active (in_hand, not all-in) players after raiser, excluding raiser
             self.players_to_act = self._players_to_act_after(player)
             print(f"[DEBUG] players_to_act after raise: {[p.name for p in self.players_to_act]}")
@@ -397,6 +399,7 @@ class PokerGame:
         while not done:
             player = self.players[self.current_player_idx]
             to_call = self.current_bet - player.current_bet
+            to_call = max(0, to_call)  # Ensure non-negative
 
             if player.is_human:
                 # Human input will be requested inside step()
@@ -417,11 +420,10 @@ class PokerGame:
             print(f"{p.name}: {p.stack} chips")
             p.reset_for_new_hand()
 
-    def handle_fold(self, player):
+    def handle_fold(self, player, to_call):
         print(f"[DEBUG handle_fold] {player.name} called handle_fold()")
         if not isinstance(self.current_bet, int) or not isinstance(player.current_bet, int):
             raise ActionValidationError("current_bet and player.current_bet must be integers.")
-        to_call = self.current_bet - player.current_bet
         try:
             result = validate_fold(in_hand=player.in_hand, to_call=to_call)
         except ValueError as e:
@@ -435,11 +437,10 @@ class PokerGame:
             "current_bet": self.current_bet,
         }
 
-    def handle_check(self, player):
+    def handle_check(self, player, to_call):
         print(f"[DEBUG handle_check] {player.name} called handle_check()")
         if not isinstance(self.current_bet, int) or not isinstance(player.current_bet, int):
             raise ActionValidationError("current_bet and player.current_bet must be integers.")
-        to_call = self.current_bet - player.current_bet
         try:
             result = validate_check(to_call=to_call)
         except ValueError as e:
@@ -452,11 +453,10 @@ class PokerGame:
             "current_bet": self.current_bet,
         }
 
-    def handle_call(self, player):
+    def handle_call(self, player, to_call):
         print(f"[DEBUG handle_call] {player.name} called handle_call()")
         if not isinstance(self.current_bet, int) or not isinstance(player.current_bet, int):
             raise ActionValidationError("current_bet and player.current_bet must be integers.")
-        to_call = self.current_bet - player.current_bet
         if to_call == 0:
             raise ActionValidationError("Cannot call when to_call is zero; should check instead.")
         try:
@@ -465,16 +465,15 @@ class PokerGame:
             print(f"Invalid call by {player.name}: {e}")
             raise ActionValidationError(str(e))
 
-        call_amount = result["call_amount"]
-        is_all_in = result["is_all_in"]
-
-        player.stack -= call_amount
-        player.total_contributed += call_amount
-        player.current_bet += call_amount
+        call_amount = min(player.stack, to_call)
+        player.bet_chips(call_amount)
         self.pot += call_amount
 
         if player.stack == 0:
             player.all_in = True
+            is_all_in = True
+        else:
+            is_all_in = False
 
         return {
             "player": player.name,
@@ -484,13 +483,12 @@ class PokerGame:
             "current_bet": self.current_bet,
         }
 
-    def handle_raise(self, player, raise_to: int):
+    def handle_raise(self, player, raise_to: int, to_call):
         print(f"[DEBUG handle_raise] {player.name} called handle_raise({raise_to})")
         # Defensive: ensure current_bet and player.current_bet are ints
         if not isinstance(self.current_bet, int) or not isinstance(player.current_bet, int):
             raise ActionValidationError("current_bet and player.current_bet must be integers.")
 
-        to_call = self.current_bet - player.current_bet
         try:
             result = validate_raise(
                 raise_to=raise_to,
@@ -643,6 +641,7 @@ if __name__ == "__main__":
         # For testing, let's call or check if possible, otherwise fold:
         player = game.players[game.current_player_idx]
         to_call = game.current_bet - player.current_bet
+        to_call = max(0, to_call)  # Ensure non-negative
         if to_call > 0:
             action = "call"
         else:
