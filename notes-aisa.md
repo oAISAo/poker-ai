@@ -1,7 +1,5 @@
 
-
-
-Start AI environment:
+Restart AI environment:
 find . -name "__pycache__" -exec rm -rf {} +
 deactivate
 source ../pokerai/bin/activate

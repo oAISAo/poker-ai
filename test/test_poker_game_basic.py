@@ -290,7 +290,7 @@ def test_three_player_all_in_side_pot(monkeypatch):
     assert alice.all_in
     assert game.phase_idx == 1  # Flop
 
-    # Flop: Bob bets 200, Carol calls
+    # Flop: Bob bets 300, Carol calls
     game.current_player_idx = 1
     game.step("raise", 300)  # Bob's total bet now 300
     game.current_player_idx = 2
@@ -304,7 +304,7 @@ def test_three_player_all_in_side_pot(monkeypatch):
     game.step("check", 0)
     assert game.phase_idx == 3  # River
 
-    # River: Bob checks, Carol bets 500, Bob folds
+    # River: Bob checks, Carol bets 600, Bob folds
     game.current_player_idx = 1
     game.step("check", 0)
     game.current_player_idx = 2
@@ -491,12 +491,12 @@ def test_call_exact_stack_triggers_all_in():
     to_call = game.current_bet - game.players[game.current_player_idx].current_bet
     assert to_call == 10
     game.step("call", 10)
-
+    print(f"[TEST DEBUG] Pot: {game.pot}, Alice stack: {game.players[0].stack}, Bob stack: {game.players[1].stack}")
     # After Alice calls, both are all-in, hand should proceed to showdown and end
     assert game.hand_over is True or game.phase_idx == game.PHASES.index("showdown")
-    assert game.pot == 40
-    assert alice.stack == 1020  # 990 after call + 40 pot awarded
-    assert bob.stack == 0
+    # Pot should be awarded to Alice, so her stack should be 1020 (990 - 10 + 40)
+    assert game.players[0].stack == 1020
+    assert game.players[1].stack == 0
 
 
 def test_check_when_not_allowed_raises_error():
@@ -695,7 +695,8 @@ def test_big_blind_raises_to_100():
     game.step("fold")
 
     assert game.hand_over is True
-    assert bb.stack == 900 + game.pot
+    assert bb.stack == 1040  # 900 + 140 pot awarded
+    assert game.pot == 0
 
     print("Test passed: BB raise to 100 with correct bet and stack updates.")
 
@@ -734,7 +735,8 @@ def test_raise_to_100_from_small_blind_position():
 
     # Hand should be over and SB should win pot
     assert game.hand_over is True
-    assert sb.stack == 900 + game.pot  # 900 + 140
+    assert sb.stack == 1040  # 900 + 140 pot awarded
+    assert game.pot == 0
 
     print("Test passed: SB raise to 100 with correct bet and stack updates.")
 

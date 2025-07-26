@@ -73,7 +73,10 @@ def validate_raise(*, raise_to, player_stack, to_call, current_bet, min_raise, b
 
     # Opening bet (to_call == 0)
     if to_call == 0:
-        if raise_to < current_bet + big_blind:
+        # Allow all-in opening bet below min if it's all-in and above current bet
+        if amount_to_put_in == player_stack and raise_to > current_bet:
+            pass  # Allow all-in opening bet below min
+        elif raise_to < current_bet + big_blind:
             raise ActionValidationError(f"Opening bet must be at least the big blind ({big_blind}).")
     else:
         raise_amount = raise_to - current_bet

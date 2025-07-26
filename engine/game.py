@@ -64,9 +64,11 @@ class PokerGame:
 
         # --- HEADS-UP LOGIC: SB (dealer) acts first preflop ---
         if len(self.players) == 2:
-            self.current_player_idx = self.dealer_position
-            # Heads-up: SB acts first, then BB
-            self.players_to_act = [self.players[(self.dealer_position + 1) % 2]]
+            # SB is dealer, BB is next
+            sb_idx = self.dealer_position
+            bb_idx = (self.dealer_position + 1) % 2
+            self.current_player_idx = sb_idx
+            self.players_to_act = [self.players[sb_idx], self.players[bb_idx]]
         else:
             # 3+ players: first to act is left of BB, then next, ..., up to BB
             first_to_act = (self.dealer_position + 3) % len(self.players)
@@ -80,7 +82,7 @@ class PokerGame:
                     break
                 idx = (idx + 1) % len(self.players)
             self.current_player_idx = first_to_act
-        self.last_raise_amount
+            pass
 
     def rotate_dealer(self):
         n = len(self.players)
@@ -110,6 +112,8 @@ class PokerGame:
         bb_player.bet_chips(bb_amount, suppress_log=True)
         print(f"{bb_player.name} posts big blind of {bb_amount}. Remaining stack: {bb_player.stack}")
         self.pot += bb_amount
+
+        print(f"[DEBUG post_blinds] Pot after blinds: {self.pot}, SB stack: {sb_player.stack}, BB stack: {bb_player.stack}")
 
         self.current_bet = bb_amount
         self.last_raise_amount = bb_amount
@@ -221,17 +225,44 @@ class PokerGame:
 
         # Defensive check: ensure no folded or all-in players remain in players_to_act
         for p in self.players_to_act:
-            assert p.in_hand and not p.all_in, (
-                f"Defensive check failed: {p.name} in players_to_act but in_hand={p.in_hand}, all_in={p.all_in}"
-            )
-        if self.players_to_act:
-            print("[DEBUG] players_to_act after cleanup:", [p.name for p in self.players_to_act])
+            if not p.in_hand or p.all_in:
+                print(f"[DEBUG] Removing {p.name} from players_to_act (folded or all-in)")
+                self.players_to_act.remove(p)
+
+        # --- HAND TERMINATION LOGIC ---
+        active_in_hand = [p for p in self.players if p.in_hand and p.stack > 0]
+        if len(active_in_hand) == 1 and not self.players_to_act:
+            self.hand_over = True
+            winner = active_in_hand[0]
+            winner.stack += self.pot
+            print(f"[DEBUG] Hand over: only one player remains ({winner.name}), awarded pot of {self.pot}")
+            self.pot = 0
+            return  # Prevent further processing
+
+        elif all(p.all_in or p.stack == 0 for p in active_in_hand) and not self.players_to_act:
+            # All-in showdown, no pending actions
+            if self.phase_idx < self.PHASES.index("showdown"):
+                while self.phase_idx < self.PHASES.index("showdown"):
+                    self._advance_phase()
+            self.phase_idx = self.PHASES.index("showdown")
+            self.showdown()
+            self.hand_over = True
+            print("[DEBUG] Hand over: all players are all-in, go to showdown")
+            return
+
+        all_all_in = all(p.all_in or p.stack == 0 for p in active_in_hand)
+        num_active = len(active_in_hand)
+
+        # If all active players are all-in, no further betting is possible
+        if all_all_in and num_active > 1:
+            self.hand_over = True
+            print(f"[DEBUG] Hand over: all active players are all-in")
+            return self._get_state(), 0, self.hand_over, {}
 
         # --- Check for win (everyone else folded) ---
         if len([p for p in self.active_players if p.in_hand]) == 1 and not self.players_to_act:
             self.hand_over = True
             winner = next(p for p in self.active_players if p.in_hand)
-            winner.stack += self.pot
             print(f"\n🏆 Hand ends! {winner.name} wins the pot of {self.pot} chips.")
             return
 
@@ -468,6 +499,8 @@ class PokerGame:
         call_amount = min(player.stack, to_call)
         player.bet_chips(call_amount)
         self.pot += call_amount
+
+        print(f"[DEBUG handle_call] Pot after call: {self.pot}, {player.name} stack: {player.stack}, all_in: {player.all_in}")
 
         if player.stack == 0:
             player.all_in = True

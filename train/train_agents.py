@@ -4,6 +4,7 @@ from env.poker_tournament_env import PokerTournamentEnv
 from agents.sharky_agent import SharkyAgent
 from sb3_contrib import MaskablePPO
 from sb3_contrib.common.wrappers import ActionMasker
+import os
 # Add more agent imports as you implement them
 # run with: python -m train.train_agents --agent sharky --timesteps 20000 --eval-episodes 20 --log INFO
 
@@ -17,6 +18,7 @@ def parse_args():
     parser.add_argument("--eval-episodes", type=int, default=10, help="Episodes for evaluation after training")
     parser.add_argument("--log", type=str, default="INFO", help="Logging level")
     parser.add_argument("--load-model", type=str, default=None, help="Path to a saved model to load")
+    parser.add_argument("--save-model", type=str, default="sharky_model.zip", help="Filename to save trained model")
     return parser.parse_args()
 
 def main():
@@ -44,7 +46,10 @@ def main():
 
     # Save the trained model
     agent.model.save("sharky_model.zip")
-    logger.info("Model saved to sharky_model.zip")
+    if os.path.exists(args.save_model):
+        raise FileExistsError(f"Model file {args.save_model} already exists. Please choose a different version or delete the file.")
+    agent.model.save(args.save_model)
+    logger.info(f"Model saved to {args.save_model}")
 
     # Evaluation
     logger.info(f"Evaluating agent for {args.eval_episodes} episodes...")
