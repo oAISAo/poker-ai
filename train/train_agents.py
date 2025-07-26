@@ -16,6 +16,7 @@ def parse_args():
     parser.add_argument("--timesteps", type=int, default=10000, help="Number of training timesteps")
     parser.add_argument("--eval-episodes", type=int, default=10, help="Episodes for evaluation after training")
     parser.add_argument("--log", type=str, default="INFO", help="Logging level")
+    parser.add_argument("--load-model", type=str, default=None, help="Path to a saved model to load")
     return parser.parse_args()
 
 def main():
@@ -30,6 +31,9 @@ def main():
     # Agent selection
     if args.agent == "sharky":
         agent = SharkyAgent(env, use_maskable_ppo=True)
+        if args.load_model:
+            agent.model = MaskablePPO.load(args.load_model, env=env)
+            logger.info(f"Loaded model from {args.load_model}")
     else:
         raise ValueError(f"Unknown agent: {args.agent}")
 
@@ -37,6 +41,10 @@ def main():
     logger.info(f"Starting training for {args.timesteps} timesteps...")
     agent.learn(total_timesteps=args.timesteps)
     logger.info("Training complete.")
+
+    # Save the trained model
+    agent.model.save("sharky_model.zip")
+    logger.info("Model saved to sharky_model.zip")
 
     # Evaluation
     logger.info(f"Evaluating agent for {args.eval_episodes} episodes...")

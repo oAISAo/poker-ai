@@ -1,120 +1,101 @@
-🧠 Poker AI Project Plan  
-Last updated: 2025-07-20  
-Author: Aiša Berro (for ChatGPT continuity)
+# 🧠 Poker AI Project Plan  
+_Last updated: 2025-07-26_  
+_Author: Aiša Berro_
 
 ---
 
-🎯 Project Goal  
-Create a high-performing AI system that learns how to play poker (starting with No-Limit Texas Hold’em) through self-play and reinforcement learning. The system will simulate different AI personalities (agents) and environments to train the ultimate poker decision-maker that can advise the user in real tournaments.
+## 🎯 Project Goal  
+Build a modular, extensible AI system that learns to play No-Limit Texas Hold’em poker through self-play, reinforcement learning, and imitation learning. The system will support multiple agent personalities, robust evaluation, and easy extension for future research and experimentation.
 
 ---
 
-👩‍💻 User Profile  
-Name: Aiša Berro  
-Background: Computer Science, Frontend Developer (strong JS, some Python)  
-Interest: AI, Reinforcement Learning, Poker  
-Motivation: Personal project, not commercial.  
-Budget: No limit (but cautious about quality and timing of purchases)
+## 👩‍💻 User Profile  
+- **Name:** Aiša Berro  
+- **Background:** Computer Science, Frontend Developer (JS, Python)  
+- **Interest:** AI, RL, Poker  
+- **Motivation:** Personal research, not commercial  
+- **Budget:** Flexible, focused on quality and learning
 
 ---
 
-🧠 AI Agents  
-We are developing 4 separate AI agents, each with its own learning strategy and personality. Each will train and evolve over time:
+## 🧠 AI Agents  
+Develop and evolve multiple agents, each with a unique strategy:
 
-- **Nashy** – Nash-equilibrium-based conservative agent  
-- **Bluffy** – Aggressive, bluffing-heavy agent  
-- **Sharky** – Optimal, learning-based self-improver (trained with RL)  
-- **Basey** – Rule-based agent with fixed, non-learning strategy (for benchmarking)  
-🆕 - **Simon** – (planned) Human-influenced agent that learns from real player Simon via logs or interactions.
+- **Nashy:** Nash-equilibrium conservative agent  
+- **Bluffy:** Aggressive, bluffing-focused agent  
+- **Sharky:** RL-based self-improver (PPO/A2C)  
+- **Basey:** Rule-based benchmark agent  
+- **Simon:** Human-influenced agent trained from real hand history
 
-Agents will be trained in different environments and game types to evaluate their performance across various contexts (cash games, SNGs, MTTs, etc.).
-
-🆕 A simulated **multi-agent tournament system** is also planned to compare and evolve agents in a competitive setting.
+Agents will compete in various environments (cash, SNG, MTT) and a multi-agent tournament system.
 
 ---
 
-📁 Folder Structure
+## 📁 Folder Structure
 ```bash
 poker-ai/
-├── agents/          # Each AI agent and base class
-│   ├── base_agent.py
-│   ├── nash.py
-│   ├── bluffy.py
-│   ├── sharky.py
-│   └── basey.py      # 🆕 Rule-based test agent
-├── engine/          # Core poker logic
-│   ├── game.py
-│   ├── player.py
-│   ├── cards.py
-│   └── evaluator.py
-├── env/             # Gym-compatible training environment
-│   └── poker_env.py
+├── agents/          # Agent classes and personalities
+├── engine/          # Poker game logic
+├── env/             # Gym-compatible environments
 ├── train/           # Training scripts
-│   └── train_agents.py
-├── utils/           # Logging, helpers, wrappers
-│   └── logger.py
-├── main.py          # Script to run games or simulations
+├── utils/           # Logging, helpers
+├── main.py          # Entry point for games/simulations
 ├── requirements.txt
-└── pytest.ini        # 🆕 Testing config for pytest
-🛠️ Tech Stack
+├── pytest.ini       # Testing config
+└── README.md        # Project documentation
+```
 
-Python 3.11+
+---
 
-Stable Baselines3
+## 🛠️ Tech Stack
+- Python 3.11+
+- Stable Baselines3, sb3-contrib
+- OpenAI Gym/Gymnasium
+- PyPokerEngine / custom engine
+- Pytest
+- VS Code
+- macOS (Intel/Apple Silicon)
+- (Optional: CUDA/GPU/cloud training)
 
-OpenAI Gym
+---
 
-PyPokerEngine / custom engine
+## ✅ Current Progress
+- Virtualenv and dependencies set up
+- Folder structure scaffolded
+- Poker engine implemented (cards, betting, hand evaluation)
+- Base agents and rule-based logic tested
+- RL agent (Sharky) training and saving implemented
+- Evaluation and metrics logging in place
 
-Pytest 🆕
+---
 
-VS Code (optional)
+## 📌 Next Steps
+1. **Agent Evolution:**  
+   - Train and version Sharky (`sharky_1.0.0`, `sharky_1.0.1`, ...), run tournaments, and evolve best agents.
+2. **Human Imitation Agent:**  
+   - Parse Simon’s hand history, train `Simon_basic` via supervised learning, then evolve with RL.
+3. **Mixed Tournaments:**  
+   - Run tournaments with all agent versions, log and analyze results.
+4. **Documentation & Usability:**  
+   - Add docstrings and usage examples to all public classes/functions.
+   - Update `README.md` with setup, training, evaluation, and extension instructions.
+5. **Testing & Validation:**  
+   - Expand unit tests and integration tests for all modules.
+6. **Visualization:**  
+   - Plot training/evaluation metrics for agent progress tracking.
 
-macOS (initially on Intel MacBook Pro, upgrades later)
+---
 
-(Possibly later: CUDA/GPU training on cloud or new Mac)
+## 🚀 Best Practices
+- Save models and logs with clear versioning.
+- Visualize training and tournament results.
+- Periodically retrain and evaluate agents against each other.
+- Use both RL and supervised learning for robust agent development.
+- Maintain up-to-date documentation and onboarding guides.
 
-✅ Current Progress
+---
 
-✅ Virtualenv created (pokerai)
-✅ Python installed
-✅ Stable Baselines3 installed
-✅ Folder structure scaffolded
-✅ Game engine implemented (cards, game flow, betting)
-✅ hand_evaluator.py working with correct ranking logic
-✅ Showdown display improved with descriptive ranks
-✅ Best 5-card hand shown per player
-✅ basey.py implemented and tested 🆕
-✅ test/test_agents.py created with unit test for Basey 🆕
-
-❌ RL agents coded
-❌ Training scripts created
-❌ Evaluation/metrics
-❌ Final advisor model
-
-📌 Next Steps
-
-🆕 Design general-purpose RL agent class as foundation for agents like Sharky
-🆕 Choose episode-based learning loop to start; consider step-based later
-🆕 Modularize reward, observation, and action-space design
-🆕 Implement Gym environment in poker_env.py
-🆕 Refactor main.py to support modular agents and evaluation
-🆕 Use pytest for continuous bug-checking and testing
-
-Define BaseAgent interface in base_agent.py ✅
-
-Create Basey rule-based agent for benchmarking ✅
-
-Begin training Sharky (PPO/A2C) via self-play
-
-Evaluate each agent against others in head-to-head play
-
-Continuously refine logic and retrain
-
-Build long-term tournament arena and meta-learning simulation
-
-📓 Notes
-
-This file is for ChatGPT context restoration in case of lost session/memory.
-Paste it at the start of a new session to reestablish context.
-Update it as the project evolves.
+## 📓 Notes
+- This file is for project context and continuity.
+- Update regularly as the project evolves.
+- Use as a reference for onboarding, planning, and retrospectives.

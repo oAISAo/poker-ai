@@ -1,42 +1,27 @@
-🟡 What’s In Progress / Next Steps
-
-1. Tournament Structure
-Start with 9 players, each with a starting stack (e.g., 1000 chips).
-Play hands in sequence until only one player remains (all others are eliminated).
-Track player elimination order for placement-based rewards.
-2. Blinds Schedule
-Define a blinds schedule (e.g., every X hands, increase blinds).
-Update the environment/game to increase blinds at the right intervals.
-3. Environment Changes
-Tournament loop:
-After each hand, check for eliminated players (stack == 0).
-Remove eliminated players from the game.
-Continue until one player remains.
-Blinds logic:
-At the start of each hand, check if it’s time to increase blinds.
-Update small_blind and big_blind accordingly.
-Placement tracking:
-Record the order in which players are eliminated.
-Assign rewards at the end based on placement (e.g., 1st place = highest reward, 2nd = less, etc.).
 
 
-Add CLI/config options for agent selection, training length, and evaluation.
-Log results to logger.py.
+# Poker AI Agent Development Plan
 
-4. Evaluation and Metrics
-Goal: Track agent performance over time and across matchups.
-Action:
-Implement win-rate, profit/loss, and showdown stats.
-Add tournament simulation scripts for multi-agent evaluation.
+## Phase 1: Sharky Self-Play Evolution
+1. Train Sharky from scratch, save as `sharky_1.0.0`.
+2. Continue training, save as `sharky_1.0.1`, ..., up to `sharky_1.0.9`.
+3. Run a tournament with all Sharky versions (`sharky_1.0.0` to `sharky_1.0.9`).
+4. Analyze results, select the best-performing agent or ensemble, and save as `sharky_1.1.0`.
+5. Repeat the process for further evolution (`sharky_1.1.x`, etc.).
 
-5. Continuous Testing
-Goal: Ensure all new features are robust and bug-free.
-Action:
-Expand test to cover new RL agents and environment logic.
-Add regression tests for any bugs found during RL training.
+## Phase 2: Simon Agent from Hand History
+1. Parse Simon’s hand history and train a supervised agent (`Simon_basic`) to mimic Simon’s play.
+2. Use `Simon_basic` as the starting point for RL training, save as `Simon_1.0.0`.
+3. Train `Simon_1.0.0` via RL, playing against Sharky versions.
+4. Save new versions as `Simon_1.0.1`, ..., and run tournaments for evaluation.
 
-6. Documentation and Usability
-Goal: Make the project easy to use and extend.
-Action:
-Add docstrings and usage examples to all public classes/functions.
-Update README.md with setup, training, and evaluation instructions.
+## Phase 3: Mixed Tournaments and Analysis
+1. Run tournaments with Sharky and Simon versions.
+2. Log and analyze placements, rewards, and strategies.
+3. Use results to guide further training, tuning, and agent development.
+
+## Best Practices
+- Save all models and logs with clear versioning.
+- Visualize training and tournament results.
+- Periodically retrain and evaluate agents against each other.
+- Use both RL and supervised learning for robust agent development.
