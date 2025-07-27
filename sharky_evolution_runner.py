@@ -65,9 +65,29 @@ def train_version(version: str, from_version: Optional[str] = None, timesteps: i
         print(f"📂 Starting from Sharky {from_version}")
     elif version != "1.0.0":
         # Auto-detect previous version
-        major, minor = version.split('.')
-        prev_minor = str(int(minor) - 1)
-        prev_version = f"{major}.{prev_minor}"
+        version_parts = version.split('.')
+        if len(version_parts) == 2:
+            # Handle format like "1.0" 
+            major, minor = version_parts
+            prev_minor = str(int(minor) - 1)
+            prev_version = f"{major}.{prev_minor}"
+        elif len(version_parts) == 3:
+            # Handle format like "1.0.1"
+            major, minor, patch = version_parts
+            prev_patch = str(int(patch) - 1)
+            if int(patch) > 0:
+                prev_version = f"{major}.{minor}.{prev_patch}"
+            else:
+                # If patch is 0, look for previous minor version
+                if int(minor) > 0:
+                    prev_minor = str(int(minor) - 1)
+                    prev_version = f"{major}.{prev_minor}.9"  # Assume .9 is highest
+                else:
+                    prev_version = "1.0.0"  # First version
+        else:
+            print(f"❌ Invalid version format: {version}")
+            return False
+            
         load_from = get_model_path(prev_version)
         if os.path.exists(load_from):
             print(f"📂 Auto-detected starting point: Sharky {prev_version}")
