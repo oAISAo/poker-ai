@@ -39,4 +39,13 @@ Thumbs.db
 test_human/__pycache__/
 test_human/*.pyc
 
+# ML Models and training artifacts
+models/
+*.zip
+*.model
+*.pkl
+*.npy
+*.h5
+*.ckpt
+
 # If you generate any other temporary files, add here

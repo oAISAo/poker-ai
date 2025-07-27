@@ -1,9 +1,6 @@
 # poker-ai/engine/player.py
 
 from engine.cards import Card
-import traceback
-
-print("USING DASHED DIR")
 
 class Player:
     def __init__(self, name, stack=1000, is_human=False):

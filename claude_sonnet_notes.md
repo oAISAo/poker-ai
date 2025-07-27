@@ -21,6 +21,14 @@ Document complex logic and edge cases
 Suggest defensive programming practices
 
 
+Debug Output Convention:
+
+Always prefix debug messages with '[DEBUG]' to keep evaluation output clean
+Example: print('[DEBUG] Player action validation passed')
+This allows evaluate_sharky_simple.py to filter out debug spam automatically
+Only use regular print() for user-facing messages and results
+
+
 please always remember we're building a robust reliable program that perfectly reflects the real texas holdem poker rules.
 
 Please always check the full, most up-to-date code in the workspace for every answer, not just summaries or stubs. Always review the actual implementation of any function or class before giving advice or analysis.
