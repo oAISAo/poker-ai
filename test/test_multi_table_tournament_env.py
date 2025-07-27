@@ -275,7 +275,15 @@ def test_tournament_stats():
     assert stats["active_tables"] > 0
     assert stats["current_blind_level"] >= 1
     assert isinstance(stats["blinds"], tuple)
-    assert len(stats["blinds"]) == 2
+    # Blinds can be (sb, bb) or (sb, bb, ante) format
+    assert len(stats["blinds"]) in [2, 3]
+    # Validate blind structure
+    if len(stats["blinds"]) == 2:
+        sb, bb = stats["blinds"]
+        assert sb > 0 and bb > 0 and bb > sb
+    else:
+        sb, bb, ante = stats["blinds"] 
+        assert sb > 0 and bb > 0 and bb > sb and ante >= 0
 
 def test_large_tournament():
     """Test with a large tournament (99 players)"""

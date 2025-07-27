@@ -11,13 +11,16 @@ class PokerGame:
     PHASES = ["preflop", "flop", "turn", "river", "showdown"]
 
     def __init__(self, players, starting_stack=1000, small_blind=10, big_blind=20,
-                game_mode=GameMode.AI_VS_AI, human_action_callback=None):
+                 ante=0, game_mode=GameMode.AI_VS_AI, human_action_callback=None):
         if len(players) < 2:
             raise ValueError("Need at least two players to start the game.")
+        if ante < 0:
+            raise ValueError("Ante cannot be negative.")
         self.players = players
         self.starting_stack = starting_stack
         self.small_blind = small_blind
         self.big_blind = big_blind
+        self.ante = ante  # Ante flag (when > 0, BB pays total ante = BB amount)
         self.game_mode = game_mode
         self.human_action_callback = human_action_callback
         self.deck = None
@@ -140,23 +143,38 @@ class PokerGame:
         sb_player = self.players[sb_idx]
         bb_player = self.players[bb_idx]
 
+        # Post antes first (BB pays total ante equal to big blind amount)
+        total_ante = 0
+        if self.ante > 0:
+            # In modern tournaments, total ante often equals the big blind
+            # BB pays the total ante for the entire table
+            total_ante = self.big_blind  # Total ante = BB amount
+            
+            ante_paid = min(bb_player.stack, total_ante)
+            if ante_paid > 0:
+                bb_player.bet_chips(ante_paid, suppress_log=True)
+                self.pot += ante_paid
+                print(f"{bb_player.name} posts ante of {ante_paid} (total ante = BB). Remaining stack: {bb_player.stack}")
+
+        # Post small blind
         sb_amount = min(sb_player.stack, self.small_blind)
         sb_player.bet_chips(sb_amount, suppress_log=True)
         print(f"{sb_player.name} posts small blind of {sb_amount}. Remaining stack: {sb_player.stack}")
         self.pot += sb_amount
 
+        # Post big blind
         bb_amount = min(bb_player.stack, self.big_blind)
         bb_player.bet_chips(bb_amount, suppress_log=True)
         print(f"{bb_player.name} posts big blind of {bb_amount}. Remaining stack: {bb_player.stack}")
         self.pot += bb_amount
 
-        print(f"[DEBUG post_blinds] Pot after blinds: {self.pot}, SB stack: {sb_player.stack}, BB stack: {bb_player.stack}")
+        print(f"[DEBUG post_blinds] Pot after blinds and antes: {self.pot}, SB stack: {sb_player.stack}, BB stack: {bb_player.stack}")
 
         self.current_bet = bb_amount
         self.last_raise_amount = bb_amount
 
-        sb_player.current_bet = sb_amount
-        bb_player.current_bet = bb_amount
+        # Note: current_bet was already updated by bet_chips() calls above
+        # No need to add again as bet_chips() already handled it
 
         self.players_who_posted_blinds = {sb_player.name, bb_player.name}
 

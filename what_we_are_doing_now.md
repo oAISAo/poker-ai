@@ -2,22 +2,6 @@
 
 # Poker AI Agent Development Plan
 
-3. Implement Multi-Table Tournament Logic
-Create a new MultiTableTournamentEnv class.
-Each table is a PokerTournamentEnv instance.
-Central controller manages player distribution, table balancing, and merging.
-Implement logic for moving players between tables and updating seat/blind positions.
-Implement logic for merging tables as players are eliminated.
-4. Write Comprehensive Multi-Table Tests
-Test initial player distribution across tables.
-Test table balancing after eliminations.
-Test merging tables and final table formation.
-Test correct blind and dealer assignment after player moves.
-Test tournament end condition (one winner).
-Test placement rewards for all players.
-5. Teach Sharky to Play Multi-Table Tournaments
-Update agent training scripts to support multi-table environments.
-Add tests for agent behavior in multi-table scenarios.
 
 
 ## Phase 1: Sharky Self-Play Evolution
