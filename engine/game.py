@@ -36,8 +36,13 @@ class PokerGame:
         self.last_raise_amount = self.big_blind  # Track last raise size
         self.bb_acted_preflop = False  # Track if BB has acted preflop
         self.players_to_act = []  # Track who still needs to act this betting round
+        self.hands_played = 0  # Track number of hands played
 
-    def reset_for_new_hand(self, deck=None):
+    def reset_for_new_hand(self, deck=None, is_first_hand=True):
+        # Rotate dealer position for new hand (except first hand of game)
+        if not is_first_hand:
+            self.rotate_dealer()
+            
         # Do NOT call reset_bets() here! Bets should only be reset after a betting round is complete.
         if deck is None:
             self.deck = Deck()
@@ -99,7 +104,7 @@ class PokerGame:
             idx = first_to_act
             self.players_to_act = []
             while True:
-                if self.players[idx].in_hand and not self.players[idx].all_in:
+                if self.players[idx].in_hand and not self.players[idx].all_in and self.players[idx].stack > 0:
                     self.players_to_act.append(self.players[idx])
                 if idx == bb_pos:
                     break
@@ -154,18 +159,18 @@ class PokerGame:
             if ante_paid > 0:
                 bb_player.bet_chips(ante_paid, suppress_log=True)
                 self.pot += ante_paid
-                print(f"{bb_player.name} posts ante of {ante_paid} (total ante = BB). Remaining stack: {bb_player.stack}")
+                print(f"[DEBUG] {bb_player.name} posts ante of {ante_paid} (total ante = BB). Remaining stack: {bb_player.stack}")
 
         # Post small blind
         sb_amount = min(sb_player.stack, self.small_blind)
         sb_player.bet_chips(sb_amount, suppress_log=True)
-        print(f"{sb_player.name} posts small blind of {sb_amount}. Remaining stack: {sb_player.stack}")
+        print(f"[DEBUG] {sb_player.name} posts small blind of {sb_amount}. Remaining stack: {sb_player.stack}")
         self.pot += sb_amount
 
         # Post big blind
         bb_amount = min(bb_player.stack, self.big_blind)
         bb_player.bet_chips(bb_amount, suppress_log=True)
-        print(f"{bb_player.name} posts big blind of {bb_amount}. Remaining stack: {bb_player.stack}")
+        print(f"[DEBUG] {bb_player.name} posts big blind of {bb_amount}. Remaining stack: {bb_player.stack}")
         self.pot += bb_amount
 
         print(f"[DEBUG post_blinds] Pot after blinds and antes: {self.pot}, SB stack: {sb_player.stack}, BB stack: {bb_player.stack}")
@@ -182,14 +187,14 @@ class PokerGame:
         for player in self.players:
             if player.in_hand and player.stack > 0:
                 player.hole_cards = self.deck.draw(2)
-                print(f"{player.name} was dealt: {player.hole_cards}")
+                print(f"[DEBUG] {player.name} was dealt: {player.hole_cards}")
             else:
                 player.hole_cards = []
 
     def deal_community_cards(self, number):
         cards = self.deck.draw(number)
         self.community_cards.extend(cards)
-        print(f"Community cards dealt: {self.community_cards}")
+        print(f"[DEBUG] Community cards dealt: {self.community_cards}")
 
     def reset_bets(self):
         for player in self.players:
@@ -210,7 +215,7 @@ class PokerGame:
 
         # If players_to_act is empty and not showdown, re-initialize for new round
         if not self.players_to_act and self.phase_idx < self.PHASES.index("showdown"):
-            self.players_to_act = [p for p in self.players if p.in_hand and not p.all_in]
+            self.players_to_act = [p for p in self.players if p.in_hand and not p.all_in and p.stack > 0]
             if self.players_to_act:
                 self.current_player_idx = self.players.index(self.players_to_act[0])
 
@@ -243,30 +248,30 @@ class PokerGame:
 
         player = self.players[self.current_player_idx]
 
-        print(f"\n==> {player.name}'s turn: Action={action}, ToCall={to_call}, RaiseTo={raise_amount}")
-        print(f"    Stack: {player.stack}, CurrentBet: {player.current_bet}, Pot: {self.pot}")
+        print(f"[DEBUG] ==> {player.name}'s turn: Action={action}, ToCall={to_call}, RaiseTo={raise_amount}")
+        print(f"[DEBUG]     Stack: {player.stack}, CurrentBet: {player.current_bet}, Pot: {self.pot}")
 
         # --- ACTIONS ---
 
         if action == "fold":
             result = self.handle_fold(player, to_call)
-            print(f"{player.name} folds.")
+            print(f"[DEBUG] {player.name} folds.")
             if sum(p.in_hand and p.stack > 0 for p in self.players) == 1:
                 # Only one player remains in hand with chips, award pot and end hand
                 winner = next(p for p in self.players if p.in_hand and p.stack > 0)
                 winner.stack += self.pot
-                print(f"{winner.name} wins the pot of {self.pot} by default (all others folded).")
+                print(f"[DEBUG] {winner.name} wins the pot of {self.pot} by default (all others folded).")
                 self.pot = 0
                 self.hand_over = True
                 return
 
         elif action == "call":
             result = self.handle_call(player, to_call)
-            print(f"{player.name} calls {result['call_amount']}{' (all-in)' if result['is_all_in'] else ''}.")
+            print(f"[DEBUG] {player.name} calls {result['call_amount']}{' (all-in)' if result['is_all_in'] else ''}.")
 
         elif action == "check":
             result = self.handle_check(player, to_call)
-            print(f"{player.name} checks.")
+            print(f"[DEBUG] {player.name} checks.")
 
         elif action == "raise":
             self.handle_raise(player, raise_to=raise_amount, to_call=to_call)
@@ -281,7 +286,7 @@ class PokerGame:
         self.active_players = [p for p in self.players if p.in_hand and p.stack > 0]
 
         # Clean up players_to_act: only keep players who are still in hand and not all-in
-        self.players_to_act = [p for p in self.players_to_act if p.in_hand and not p.all_in]
+        self.players_to_act = [p for p in self.players_to_act if p.in_hand and not p.all_in and p.stack > 0]
 
         # Always remove the acting player from players_to_act (except after a raise, which resets the list)
         if action in ("call", "check", "fold") and player in self.players_to_act:
@@ -332,7 +337,7 @@ class PokerGame:
         if len([p for p in self.active_players if p.in_hand]) == 1 and not self.players_to_act:
             self.hand_over = True
             winner = next(p for p in self.active_players if p.in_hand)
-            print(f"\n🏆 Hand ends! {winner.name} wins the pot of {self.pot} chips.")
+            print(f"[DEBUG] Hand ends! {winner.name} wins the pot of {self.pot} chips.")
             return
 
         # --- Check for all-in showdown ---
@@ -359,7 +364,7 @@ class PokerGame:
 
                 # Set current player to first active after dealer
                 self.current_player_idx = (self.dealer_position + 1) % len(self.players)
-                while not self.players[self.current_player_idx].in_hand:
+                while not (self.players[self.current_player_idx].in_hand and self.players[self.current_player_idx].stack > 0):
                     self.current_player_idx = (self.current_player_idx + 1) % len(self.players)
                 # After phase advance, players_to_act should be empty.
                 self.players_to_act = []
@@ -465,7 +470,9 @@ class PokerGame:
         num_players = len(self.players)
         for _ in range(num_players):
             self.current_player_idx = (self.current_player_idx + 1) % num_players
-            if self.players[self.current_player_idx].in_hand and not self.players[self.current_player_idx].all_in:
+            current_player = self.players[self.current_player_idx]
+            # Player must be in hand, not all-in, AND have chips remaining
+            if current_player.in_hand and not current_player.all_in and current_player.stack > 0:
                 return
         # No players left to act
         self.hand_over = True
@@ -478,9 +485,19 @@ class PokerGame:
         # Betting round is only complete if all players have acted after the last raise
         if self.players_to_act:
             return False
-        # Also check that all active players have equal bets or are all-in
-        active_bets = [p.current_bet for p in self.active_players if p.in_hand]
-        if len(set(active_bets)) <= 1:
+        # Check that all non-all-in players have equal bets
+        # All-in players can have different bet amounts due to side pots
+        in_hand_players = [p for p in self.players if p.in_hand]
+        if not in_hand_players:
+            return True  # No players in hand, round is complete
+        
+        # Only check non-all-in players for equal bets
+        non_all_in_players = [p for p in in_hand_players if not p.all_in and p.stack > 0]
+        if not non_all_in_players:
+            return True  # All remaining players are all-in, round is complete
+        
+        non_all_in_bets = [p.current_bet for p in non_all_in_players]
+        if len(set(non_all_in_bets)) <= 1:
             return True
         return False
 
@@ -505,8 +522,9 @@ class PokerGame:
         }
     
     def play_hand(self):
-        self.reset_for_new_hand()
-        self.rotate_dealer()
+        # Use is_first_hand=True only for the very first hand
+        is_first_hand = (self.hands_played == 0)
+        self.reset_for_new_hand(is_first_hand=is_first_hand)
 
         done = False
         while not done:
@@ -526,6 +544,9 @@ class PokerGame:
                     raise_amount = 0
 
             _, _, done, _ = self.step(action, raise_amount)
+
+        # Increment hands_played counter after hand is complete
+        self.hands_played += 1
 
         print("Hand complete.")
         print("Final stacks:")
@@ -640,7 +661,7 @@ class PokerGame:
             # Not a valid raise (should not happen if validation is correct)
             pass
 
-        print(f"{player.name} raises to {raise_to}. (Put in {raise_amount}, stack now {player.stack})")
+        print(f"[DEBUG] {player.name} raises to {raise_to}. (Put in {raise_amount}, stack now {player.stack})")
 
         return {
             "player": player.name,
@@ -714,7 +735,7 @@ class PokerGame:
             for j, p in enumerate(winners):
                 award = split + (1 if j < remainder else 0)
                 p.stack += award
-                print(f"{p.name} wins {award} chips from pot {i+1} (side pot)" if len(pots) > 1 else f"{p.name} wins {award} chips.")
+                print(f"[DEBUG] {p.name} wins {award} chips from pot {i+1} (side pot)" if len(pots) > 1 else f"[DEBUG] {p.name} wins {award} chips.")
         self.pot = 0
 
     def _players_to_act_after(self, raiser):

@@ -29,7 +29,7 @@ def test_bug_raise_resets_betting_round(monkeypatch):
     players = [TestPlayer("P1"), TestPlayer("P2"), TestPlayer("P3")]
     game = PokerGame(players, game_mode=GameMode.AI_VS_AI)
 
-    game.reset_for_new_hand()
+    game.reset_for_new_hand(is_first_hand=True)
     game.dealer_position = 0
     game.post_blinds()
     game.deal_hole_cards()
@@ -134,7 +134,7 @@ def test_bug_all_in_sets_flag(monkeypatch):
     ai2 = AllInTestPlayer("AI2", stack=1000, is_human=False)
     game = PokerGame([ai1, ai2], game_mode=GameMode.AI_VS_AI)
 
-    game.reset_for_new_hand()
+    game.reset_for_new_hand(is_first_hand=True)
     game.dealer_position = 0
     game.post_blinds()
     game.deal_hole_cards()
@@ -164,7 +164,7 @@ def test_bug_fold_removes_player_from_active():
     p2 = Player("P2", stack=1000, is_human=False)
 
     game = PokerGame([p1, p2], game_mode=GameMode.AI_VS_AI)
-    game.reset_for_new_hand()
+    game.reset_for_new_hand(is_first_hand=True)
     game.dealer_position = 0
     game.post_blinds()
     game.deal_hole_cards()
@@ -188,14 +188,12 @@ def test_multi_hand_session():
     num_hands = 5
 
     for hand_num in range(num_hands):
-        # Suppress print for cleaner test output
-        import builtins
-        orig_print = builtins.print
-        builtins.print = lambda *args, **kwargs: None
 
         initial_total = sum(p.stack for p in players)
 
+        print(f"[DEBUG] Before hand {hand_num}, dealer_position = {game.dealer_position}")
         game.play_hand()
+        print(f"[DEBUG] After hand {hand_num}, dealer_position = {game.dealer_position}")
 
         final_total = sum(p.stack for p in players)
         assert final_total == initial_total, "Total chips should remain constant"
@@ -203,7 +201,11 @@ def test_multi_hand_session():
         for p in players:
             assert p.stack >= 0, f"{p.name} has negative stack"
 
-        expected_dealer = (hand_num + 1) % len(players)
-        assert game.dealer_position == expected_dealer, "Dealer position mismatch"
+        # Real poker rule: dealer position used for THIS hand should match hand_num
+        # Hand 0 uses dealer 0, Hand 1 uses dealer 1, Hand 2 uses dealer 2, etc.
+        # Dealer rotates at START of each new hand, not at end of previous hand
+        expected_dealer = hand_num % len(players)
+        print(f"[DEBUG] Hand {hand_num}: expected {expected_dealer}, actual {game.dealer_position}")
+        assert game.dealer_position == expected_dealer, f"Hand {hand_num}: expected dealer {expected_dealer}, got {game.dealer_position}"
 
-        builtins.print = orig_print
+        # builtins.print = orig_print

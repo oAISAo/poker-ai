@@ -28,12 +28,12 @@ class Player:
         if self.stack == 0:
             self.all_in = True  # Player is all-in if no chips left
         if not suppress_log:
-            print(f"{self.name} bets {actual_bet}. Remaining stack: {self.stack}")
+            print(f"[DEBUG] {self.name} bets {actual_bet}. Remaining stack: {self.stack}")
         return actual_bet
 
     def fold(self):
         self.in_hand = False
-        print(f"{self.name} folds.")
+        print(f"[DEBUG] {self.name} folds.")
 
     def reset_for_new_hand(self):
         self.hole_cards = []

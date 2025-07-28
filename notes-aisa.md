@@ -51,3 +51,12 @@ Average Reward: Points earned (our reward system)
 Winner gets 1000 points
 2nd place gets 600 points
 etc.
+
+
+Unit Test:
+python -m pytest test/test_ante_functionality.py
+
+
+train sharky:
+python train_sharky_vs_rule_based.py 1.0.1 --timesteps 50000 --from models/sharky_evolution/sharky_1.0.0.zip
+python train_sharky_vs_rule_based.py 1.0.1 --timesteps 25000 --from models/sharky_evolution/sharky_1.0.0.zip

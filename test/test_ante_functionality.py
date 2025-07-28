@@ -34,7 +34,7 @@ class TestAnteInPokerGame:
         game = PokerGame(players, small_blind=50, big_blind=100, ante=10)
         
         # Reset and post blinds
-        game.reset_for_new_hand()
+        game.reset_for_new_hand(is_first_hand=True)
         
         # Find BB player
         bb_pos = (game.dealer_position + 2) % len(players)
@@ -59,7 +59,7 @@ class TestAnteInPokerGame:
         
         game = PokerGame(players, small_blind=50, big_blind=100, ante=10)
         game.dealer_position = 0
-        game.reset_for_new_hand()
+        game.reset_for_new_hand(is_first_hand=True)
         
         bb_player = players[bb_pos]
         
@@ -72,7 +72,7 @@ class TestAnteInPokerGame:
         players = [Player(f"Player_{i}", stack=1000) for i in range(2)]
         game = PokerGame(players, small_blind=50, big_blind=100, ante=25)
         
-        game.reset_for_new_hand()
+        game.reset_for_new_hand(is_first_hand=True)
         
         # In heads-up: dealer is SB, other player is BB
         bb_player = players[1] if players[0] == game.players[game.dealer_position] else players[0]
@@ -89,7 +89,7 @@ class TestAnteInPokerGame:
         players = [Player(f"Player_{i}", stack=1000) for i in range(6)]
         game = PokerGame(players, small_blind=50, big_blind=100, ante=0)
         
-        game.reset_for_new_hand()
+        game.reset_for_new_hand(is_first_hand=True)
         
         # Find SB and BB players
         sb_pos = (game.dealer_position + 1) % len(players)
@@ -271,7 +271,7 @@ class TestAnteEdgeCases:
         players[1].stack = 5  # Very small stack
         
         game = PokerGame(players, small_blind=10, big_blind=20, ante=5)
-        game.reset_for_new_hand()
+        game.reset_for_new_hand(is_first_hand=True)
         
         # Game should handle all-in players gracefully
         # BB should still pay ante for all players including all-in ones
@@ -295,7 +295,7 @@ class TestAnteEdgeCases:
         
         # This is unusual but can happen in very late tournament stages
         game = PokerGame(players, small_blind=10, big_blind=20, ante=25)
-        game.reset_for_new_hand()
+        game.reset_for_new_hand(is_first_hand=True)
         
         # Should work - BB pays 20 + total ante (20) = 40
         bb_pos = (game.dealer_position + 2) % len(players)
@@ -309,7 +309,7 @@ class TestAnteEdgeCases:
         players = [Player(f"Player_{i}", stack=1000) for i in range(2)]
         game = PokerGame(players, small_blind=10, big_blind=20, ante=5)
         
-        game.reset_for_new_hand()
+        game.reset_for_new_hand(is_first_hand=True)
         
         # In heads-up, dealer is SB, other is BB
         # BB pays: 20 + total ante (20) = 40
@@ -356,7 +356,7 @@ class TestRealisticTournamentAnteProgression:
                 # Reset for new hand to apply antes
                 if table.get_active_player_count() >= 2:
                     try:
-                        table.game.reset_for_new_hand()
+                        table.game.reset_for_new_hand(is_first_hand=True)
                         
                         # Verify ante is applied correctly
                         if ante > 0:

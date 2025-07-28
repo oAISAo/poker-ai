@@ -75,7 +75,7 @@ print(f"Winner: {stats['chip_leader']}")
 env = MultiTableTournamentEnv(
     total_players=99,              # Total tournament players
     max_players_per_table=9,       # Maximum players per table
-    min_players_per_table=6,       # Minimum before balancing
+    min_players_per_table=2,       # Minimum before balancing
     starting_stack=1000,           # Starting chip stack
     hands_per_blind_level=10,      # Hands before blind increase
     table_balancing_threshold=7,   # Trigger balancing below this

@@ -68,17 +68,19 @@ def validate_raise(*, raise_to, player_stack, to_call, current_bet, min_raise, b
         return RaiseValidationResult(is_all_in=True, raise_amount=raise_to - current_bet, amount_to_put_in=amount_to_put_in)
 
     # Now check if player is trying to put in more than their stack (not all-in)
-    print(f"DEBUG: raise_to={raise_to}, player_stack={player_stack}, to_call={to_call}, current_bet={current_bet}, min_raise={min_raise}, big_blind={big_blind}, player_current_bet={player_current_bet}, amount_to_put_in={amount_to_put_in}")
+    print(f"[DEBUG] raise_to={raise_to}, player_stack={player_stack}, to_call={to_call}, current_bet={current_bet}, min_raise={min_raise}, big_blind={big_blind}, player_current_bet={player_current_bet}, amount_to_put_in={amount_to_put_in}")
     if amount_to_put_in > player_stack:
         raise ActionValidationError(f"Invalid raise: player only has {player_stack} chips.")
 
-    # Opening bet (to_call == 0)
+    # Opening bet (to_call == 0) - player wants to be first to raise in this betting round
     if to_call == 0:
+        # Even for opening bets, the raise amount must be at least the big blind above current bet
+        raise_amount = raise_to - current_bet
         # Allow all-in opening bet below min if it's all-in and above current bet
         if amount_to_put_in == player_stack and raise_to > current_bet:
             pass  # Allow all-in opening bet below min
-        elif raise_to < current_bet + big_blind:
-            raise ActionValidationError(f"Opening bet must be at least the big blind ({big_blind}).")
+        elif raise_amount < big_blind:
+            raise ActionValidationError(f"Opening bet must raise by at least the big blind ({big_blind}). Tried to raise by {raise_amount}.")
     else:
         raise_amount = raise_to - current_bet
         if raise_amount < min_raise:

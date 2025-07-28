@@ -122,7 +122,7 @@ def evaluate_version(version: str, num_tournaments: int = 5):
     
     try:
         # Create environment
-        env = MultiTableTournamentEnv(total_players=18, max_players_per_table=9, min_players_per_table=6)
+        env = MultiTableTournamentEnv(total_players=18, max_players_per_table=9, min_players_per_table=2)
         
         # Create and load agent
         agent = SharkyAgent(env, version=version)

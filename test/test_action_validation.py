@@ -192,7 +192,7 @@ def test_valid_raise_exact_min_raise_pass():
 
 def test_opening_bet_less_than_big_blind_fails():
     """Opening bet less than big blind should fail unless all-in."""
-    with pytest.raises(ActionValidationError, match="Opening bet must be at least the big blind"):
+    with pytest.raises(ActionValidationError, match="Opening bet must raise by at least the big blind"):
         validate_raise(raise_to=10, player_stack=100, to_call=0, current_bet=0, min_raise=20, big_blind=20, player_current_bet=0)
 
 def test_opening_bet_equal_to_big_blind_pass():

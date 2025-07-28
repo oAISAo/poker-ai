@@ -8,7 +8,7 @@ from engine.action_validation import ActionValidationError
 def test_nine_player_preflop_all_call_one_raise():
     players = [Player(f"P{i}", stack=1000) for i in range(9)]
     game = PokerGame(players, small_blind=10, big_blind=20)
-    game.reset_for_new_hand()
+    game.reset_for_new_hand(is_first_hand=True)
     # All call except P5, who raises to 100
     for i in range(9):
         game.current_player_idx = i
@@ -37,7 +37,7 @@ def test_nine_player_preflop_all_call_one_raise():
 def test_nine_player_flop_all_in_and_folds():
     players = [Player(f"P{i}", stack=1000) for i in range(9)]
     game = PokerGame(players, small_blind=10, big_blind=20)
-    game.reset_for_new_hand()
+    game.reset_for_new_hand(is_first_hand=True)
     for i in range(9):
         game.current_player_idx = i
         to_call = game.current_bet - players[i].current_bet
@@ -84,7 +84,7 @@ def test_nine_player_sequential_elimination():
             break
             
         try:
-            game.reset_for_new_hand()
+            game.reset_for_new_hand(is_first_hand=True)
         except RuntimeError as e:
             if "Not enough players with chips to continue" in str(e):
                 break
@@ -136,7 +136,7 @@ def test_hand_ends_when_all_players_all_in():
     alice = Player("Alice", stack=100)
     bob = Player("Bob", stack=100)
     game = PokerGame([alice, bob], small_blind=10, big_blind=20)
-    game.reset_for_new_hand()
+    game.reset_for_new_hand(is_first_hand=True)
     game.current_player_idx = 0
     game.step("raise", 100)
     game.current_player_idx = 1
@@ -149,7 +149,7 @@ def test_hand_ends_when_all_but_one_fold():
     alice = Player("Alice", stack=1000)
     bob = Player("Bob", stack=1000)
     game = PokerGame([alice, bob], small_blind=10, big_blind=20)
-    game.reset_for_new_hand()
+    game.reset_for_new_hand(is_first_hand=True)
     game.current_player_idx = 0
     game.step("fold", 0)
     assert game.hand_over
@@ -160,14 +160,14 @@ def test_hand_ends_when_all_players_eliminated_except_one():
     bob = Player("Bob", stack=0)
     carol = Player("Carol", stack=1000)
     with pytest.raises(RuntimeError, match="Not enough players with chips to continue."):
-        PokerGame([alice, bob, carol]).reset_for_new_hand()
+        PokerGame([alice, bob, carol]).reset_for_new_hand(is_first_hand=True)
 
 def test_hand_ends_when_all_in_and_folded_mix():
     alice = Player("Alice", stack=0)
     bob = Player("Bob", stack=1000)
     carol = Player("Carol", stack=1000)
     game = PokerGame([alice, bob, carol], small_blind=10, big_blind=20)
-    game.reset_for_new_hand()
+    game.reset_for_new_hand(is_first_hand=True)
     # Alice is all-in and should not act
     assert not alice.in_hand or getattr(alice, "all_in", False)
     # Only Bob and Carol should be able to act
@@ -187,7 +187,7 @@ def test_hand_ends_when_all_players_folded():
     bob = Player("Bob", stack=1000)
     carol = Player("Carol", stack=1000)
     game = PokerGame([alice, bob, carol], small_blind=10, big_blind=20)
-    game.reset_for_new_hand()
+    game.reset_for_new_hand(is_first_hand=True)
     game.current_player_idx = 0
     game.step("fold", 0)
     game.current_player_idx = 1
@@ -201,14 +201,14 @@ def test_hand_ends_when_all_players_have_zero_stack():
     bob = Player("Bob", stack=0)
     carol = Player("Carol", stack=0)
     with pytest.raises(RuntimeError, match="Not enough players with chips to continue."):
-        PokerGame([alice, bob, carol]).reset_for_new_hand()
+        PokerGame([alice, bob, carol]).reset_for_new_hand(is_first_hand=True)
 
 def test_three_player_full_hand_flow(monkeypatch):
     alice = Player("Alice", stack=1000)
     bob = Player("Bob", stack=1000)
     carol = Player("Carol", stack=1000)
     game = PokerGame([alice, bob, carol], small_blind=10, big_blind=20)
-    game.reset_for_new_hand()
+    game.reset_for_new_hand(is_first_hand=True)
     game.current_player_idx = 0
     game.step("call", 0)
     game.current_player_idx = 1
@@ -241,7 +241,7 @@ def test_full_hand_simulation_with_showdown(monkeypatch):
     alice = Player("Alice", stack=1000)
     bob = Player("Bob", stack=1000)
     game = PokerGame([alice, bob], small_blind=10, big_blind=20)
-    game.reset_for_new_hand()
+    game.reset_for_new_hand(is_first_hand=True)
     game.current_player_idx = 0
     game.step("call", 0)
     game.current_player_idx = 1
@@ -269,7 +269,7 @@ def test_split_pot(monkeypatch):
     alice = Player("Alice", stack=1000)
     bob = Player("Bob", stack=1000)
     game = PokerGame([alice, bob], small_blind=10, big_blind=20)
-    game.reset_for_new_hand()
+    game.reset_for_new_hand(is_first_hand=True)
     monkeypatch.setattr("engine.hand_evaluator.hand_rank", lambda *args, **kwargs: (1, [14, 13, 12, 11, 10]))
     monkeypatch.setattr("engine.game.hand_rank", lambda *args, **kwargs: (1, [14, 13, 12, 11, 10]))
     for phase in range(4):
@@ -285,7 +285,7 @@ def test_all_players_all_in_before_river(monkeypatch):
     alice = Player("Alice", stack=100)
     bob = Player("Bob", stack=100)
     game = PokerGame([alice, bob], small_blind=10, big_blind=20)
-    game.reset_for_new_hand()
+    game.reset_for_new_hand(is_first_hand=True)
     game.current_player_idx = 0
     game.step("call", 0)
     game.current_player_idx = 1
@@ -301,14 +301,14 @@ def test_player_eliminated_not_in_next_hand():
     alice = Player("Alice", stack=100)
     bob = Player("Bob", stack=1000)
     game = PokerGame([alice, bob], small_blind=10, big_blind=20)
-    game.reset_for_new_hand()
+    game.reset_for_new_hand(is_first_hand=True)
     game.current_player_idx = 0
     game.step("raise", 90)
     game.current_player_idx = 1
     game.step("call", 0)
     alice.stack = 0
     with pytest.raises(RuntimeError, match="Not enough players with chips to continue."):
-        game.reset_for_new_hand()
+        game.reset_for_new_hand(is_first_hand=True)
 
 def test_human_action_callback_called():
     alice = Player("Alice", stack=1000, is_human=True)
@@ -321,7 +321,7 @@ def test_human_action_callback_called():
         else:
             return "call", 0
     game = PokerGame([alice, bob], human_action_callback=fake_callback)
-    game.reset_for_new_hand()
+    game.reset_for_new_hand(is_first_hand=True)
     game.current_player_idx = 0
     game.step(None, 0)
     assert called.get("called") is True
@@ -330,7 +330,7 @@ def test_invalid_actions_raise_exceptions():
     alice = Player("Alice", stack=1000)
     bob = Player("Bob", stack=1000)
     game = PokerGame([alice, bob], small_blind=10, big_blind=20)
-    game.reset_for_new_hand()
+    game.reset_for_new_hand(is_first_hand=True)
     game.current_player_idx = 0
     with pytest.raises(ActionValidationError):
         game.step("check", 0)
@@ -343,7 +343,7 @@ def test_dealer_button_skips_eliminated_players():
     bob = Player("Bob", stack=0)
     carol = Player("Carol", stack=1000)
     game = PokerGame([alice, bob, carol])
-    game.reset_for_new_hand()
+    game.reset_for_new_hand(is_first_hand=True)
     game.rotate_dealer()
     assert game.players[game.dealer_position].stack > 0
 
@@ -352,7 +352,7 @@ def test_three_player_full_hand_showdown(monkeypatch):
     bob = Player("Bob", stack=1000)
     carol = Player("Carol", stack=1000)
     game = PokerGame([alice, bob, carol], small_blind=10, big_blind=20)
-    game.reset_for_new_hand()
+    game.reset_for_new_hand(is_first_hand=True)
     game.current_player_idx = 0
     game.step("call", 0)
     game.current_player_idx = 1
@@ -387,7 +387,7 @@ def test_three_player_one_folds_preflop(monkeypatch):
     bob = Player("Bob", stack=1000)
     carol = Player("Carol", stack=1000)
     game = PokerGame([alice, bob, carol], small_blind=10, big_blind=20)
-    game.reset_for_new_hand()
+    game.reset_for_new_hand(is_first_hand=True)
     game.current_player_idx = 0
     game.step("fold")
     game.current_player_idx = 1
@@ -417,7 +417,7 @@ def test_three_player_all_in_side_pot(monkeypatch):
     bob = Player("Bob", stack=500)
     carol = Player("Carol", stack=1000)
     game = PokerGame([alice, bob, carol], small_blind=10, big_blind=20)
-    game.reset_for_new_hand()
+    game.reset_for_new_hand(is_first_hand=True)
     game.current_player_idx = 0
     game.step("raise", 100)
     game.current_player_idx = 1
@@ -449,7 +449,7 @@ def test_three_player_split_pot(monkeypatch):
     bob = Player("Bob", stack=1000)
     carol = Player("Carol", stack=1000)
     game = PokerGame([alice, bob, carol], small_blind=10, big_blind=20)
-    game.reset_for_new_hand()
+    game.reset_for_new_hand(is_first_hand=True)
     monkeypatch.setattr("engine.hand_evaluator.hand_rank", lambda *args, **kwargs: (1, [14, 13, 12, 11, 10]))
     monkeypatch.setattr("engine.game.hand_rank", lambda *args, **kwargs: (1, [14, 13, 12, 11, 10]))
     game.current_player_idx = 0
@@ -481,7 +481,7 @@ def test_full_hand_simulation():
     alice = Player("Alice", stack=1000)
     bob = Player("Bob", stack=1000)
     game = PokerGame([alice, bob], small_blind=10, big_blind=20)
-    game.reset_for_new_hand()
+    game.reset_for_new_hand(is_first_hand=True)
     game.current_player_idx = 0
     game.step("call", 0)
     game.current_player_idx = 1
@@ -509,7 +509,7 @@ def test_last_raise_amount_consistency_after_multiple_raises():
     bob = Player("Bob", stack=1000)
     carol = Player("Carol", stack=1000)
     game = PokerGame([alice, bob, carol], small_blind=10, big_blind=20)
-    game.reset_for_new_hand()
+    game.reset_for_new_hand(is_first_hand=True)
     game.current_player_idx = 0
     game.step("raise", 50)
     assert game.current_bet == 50
@@ -530,7 +530,7 @@ def test_raise_below_min_not_all_in_raises_error():
     alice = Player("Alice", stack=1000)
     bob = Player("Bob", stack=1000)
     game = PokerGame([alice, bob], small_blind=10, big_blind=20)
-    game.reset_for_new_hand()
+    game.reset_for_new_hand(is_first_hand=True)
     game.current_player_idx = 0
     with pytest.raises(ActionValidationError, match="Must raise by at least .* chips"):
         game.step("raise", 30)
@@ -540,7 +540,7 @@ def test_all_in_below_minimum_raise_is_allowed():
     bob = Player("Bob", stack=35)
     game = PokerGame([alice, bob], small_blind=10, big_blind=20)
     game.dealer_position = 0
-    game.reset_for_new_hand()
+    game.reset_for_new_hand(is_first_hand=True)
     game.current_player_idx = 0
     to_call = game.current_bet - game.players[game.current_player_idx].current_bet
     assert to_call == 10
@@ -560,7 +560,7 @@ def test_cannot_check_when_to_call():
     bob = Player("Bob", stack=20)
     game = PokerGame([alice, bob], small_blind=10, big_blind=20)
     game.dealer_position = 0
-    game.reset_for_new_hand()
+    game.reset_for_new_hand(is_first_hand=True)
     game.current_player_idx = 0
     to_call = game.current_bet - game.players[game.current_player_idx].current_bet
     assert to_call == 10
@@ -572,7 +572,7 @@ def test_call_exact_stack_triggers_all_in():
     bob = Player("Bob", stack=20)
     game = PokerGame([alice, bob], small_blind=10, big_blind=20)
     game.dealer_position = 0
-    game.reset_for_new_hand()
+    game.reset_for_new_hand(is_first_hand=True)
     game.current_player_idx = 0
     to_call = game.current_bet - game.players[game.current_player_idx].current_bet
     assert to_call == 10
@@ -586,7 +586,7 @@ def test_check_when_not_allowed_raises_error():
     alice = Player("Alice", stack=1000)
     bob = Player("Bob", stack=1000)
     game = PokerGame([alice, bob], small_blind=10, big_blind=20)
-    game.reset_for_new_hand()
+    game.reset_for_new_hand(is_first_hand=True)
     print(f"SB current_bet: {game.players[game.dealer_position].current_bet}")
     print(f"BB current_bet: {game.players[(game.dealer_position + 1) % 2].current_bet}")
     print(f"Table current_bet: {game.current_bet}")
@@ -603,7 +603,7 @@ def test_betting_round_does_not_skip_big_blind():
     sb = Player("SmallBlind", stack=1000)
     bb = Player("BigBlind", stack=1000)
     game = PokerGame([dealer, sb, bb], small_blind=10, big_blind=20)
-    game.reset_for_new_hand()
+    game.reset_for_new_hand(is_first_hand=True)
     game.current_player_idx = 0
     game.step("call", 0)
     game.current_player_idx = 1
@@ -628,7 +628,7 @@ def test_betting_round_only_ends_after_all_respond_to_raise():
     c = Player("C", stack=1000)
     d = Player("D", stack=1000)
     game = PokerGame([a, b, c, d], small_blind=10, big_blind=20)
-    game.reset_for_new_hand()
+    game.reset_for_new_hand(is_first_hand=True)
     game.current_player_idx = 0
     game.step("call", 0)
     game.current_player_idx = 1
@@ -648,7 +648,7 @@ def test_betting_round_resets_players_to_act_on_new_raise():
     y = Player("Y", stack=1000)
     z = Player("Z", stack=1000)
     game = PokerGame([x, y, z], small_blind=10, big_blind=20)
-    game.reset_for_new_hand()
+    game.reset_for_new_hand(is_first_hand=True)
     game.current_player_idx = 0
     game.step("raise", 50)
     game.current_player_idx = 1
@@ -668,7 +668,7 @@ def test_betting_round_complete_when_all_in_players_are_skipped():
     b = Player("B", stack=100)
     c = Player("C", stack=1000)
     game = PokerGame([a, b, c], small_blind=10, big_blind=20)
-    game.reset_for_new_hand()
+    game.reset_for_new_hand(is_first_hand=True)
     game.current_player_idx = 0
     game.step("raise", 200)
     game.current_player_idx = 1
@@ -684,7 +684,7 @@ def test_players_to_act_resets_each_betting_round():
     b = Player("B", stack=1000)
     c = Player("C", stack=1000)
     game = PokerGame([a, b, c], small_blind=10, big_blind=20)
-    game.reset_for_new_hand()
+    game.reset_for_new_hand(is_first_hand=True)
     game.current_player_idx = 0
     game.step("call", 0)
     print(f"After action: phase_idx={game.phase_idx}, players_to_act={[p.name for p in game.players_to_act]}")
@@ -713,7 +713,7 @@ def test_big_blind_raises_to_100():
     sb = Player("SmallBlind", stack=1000, is_human=False)
     bb = Player("BigBlind", stack=1000, is_human=False)
     game = PokerGame([dealer, sb, bb], small_blind=10, big_blind=20)
-    game.reset_for_new_hand()
+    game.reset_for_new_hand(is_first_hand=True)
     game.current_player_idx = 0
     game.step("call", 0)
     assert dealer.current_bet == 20
@@ -742,7 +742,7 @@ def test_raise_to_100_from_small_blind_position():
     sb = Player("SmallBlind", stack=1000, is_human=False)
     bb = Player("BigBlind", stack=1000, is_human=False)
     game = PokerGame([dealer, sb, bb], small_blind=10, big_blind=20)
-    game.reset_for_new_hand()
+    game.reset_for_new_hand(is_first_hand=True)
     game.current_player_idx = 0
     game.step("call", 0)
     assert dealer.current_bet == 20
@@ -766,7 +766,7 @@ def test_raise_to_100_sets_correct_current_bet():
     alice = Player("Alice", stack=1000, is_human=False)
     bob = Player("Bob", stack=1000, is_human=False)
     game = PokerGame([alice, bob], small_blind=10, big_blind=20)
-    game.reset_for_new_hand()
+    game.reset_for_new_hand(is_first_hand=True)
     game.current_player_idx = 1
     game.step("raise", 100)
     assert bob.current_bet == 100
@@ -778,7 +778,7 @@ def test_single_remaining_player_wins():
     alice = Player("Alice", stack=1000)
     bob = Player("Bob", stack=1000)
     game = PokerGame([alice, bob])
-    game.reset_for_new_hand()
+    game.reset_for_new_hand(is_first_hand=True)
     current_idx = game.current_player_idx
     acting_player = game.players[current_idx]
     # If to_call == 0, must check, not fold
@@ -804,7 +804,7 @@ def test_community_cards_dealing():
     alice = Player("Alice", stack=1000)
     bob = Player("Bob", stack=1000)
     game = PokerGame([alice, bob])
-    game.reset_for_new_hand()
+    game.reset_for_new_hand(is_first_hand=True)
     game.phase_idx = 1
     game.deal_community_cards(3)
     assert len(game.community_cards) == 3
@@ -825,7 +825,7 @@ def test_blinds_posting_heads_up():
     alice = Player("Alice", stack=1000)
     bob = Player("Bob", stack=1000)
     game = PokerGame([alice, bob], small_blind=10, big_blind=20)
-    game.reset_for_new_hand()
+    game.reset_for_new_hand(is_first_hand=True)
     # Find SB and BB by current_bet
     sb_player = next(p for p in game.players if p.current_bet == 10)
     bb_player = next(p for p in game.players if p.current_bet == 20)
@@ -839,7 +839,7 @@ def test_blinds_posting_three_players():
     bob = Player("Bob", stack=1000)
     carol = Player("Carol", stack=1000)
     game = PokerGame([alice, bob, carol], small_blind=10, big_blind=20)
-    game.reset_for_new_hand()
+    game.reset_for_new_hand(is_first_hand=True)
     sb_pos = (game.dealer_position + 1) % 3
     bb_pos = (game.dealer_position + 2) % 3
     sb_player = game.players[sb_pos]

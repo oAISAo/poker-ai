@@ -20,7 +20,7 @@ def parse_args():
     parser.add_argument("--tournaments", type=int, default=3, help="Number of tournaments for evaluation")
     parser.add_argument("--total-players", type=int, default=27, help="Total players in tournament")
     parser.add_argument("--max-per-table", type=int, default=9, help="Maximum players per table")
-    parser.add_argument("--hands-per-level", type=int, default=10, help="Hands per blind level")
+    parser.add_argument("--hands-per-level", type=int, default=9, help="Hands per blind level")
     parser.add_argument("--log", type=str, default="INFO", help="Logging level")
     parser.add_argument("--load-model", type=str, default=None, help="Path to a saved model to load")
     parser.add_argument("--save-model", type=str, default="multi_table_sharky_model.zip", help="Filename to save trained model")
