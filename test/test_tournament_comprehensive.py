@@ -93,7 +93,8 @@ def test_tournament_until_error(max_steps=1000):
                 print(f"Tournament completed successfully at step {step}!")
                 stats = env.get_tournament_stats()
                 print(f"Final stats: {stats}")
-                return "SUCCESS"
+                assert stats['remaining_players'] <= 2, "Tournament should end with 2 or fewer players"
+                return
                 
         except Exception as e:
             print(f"\n🚨 ERROR at step {step}: {type(e).__name__}: {e}")
@@ -113,13 +114,15 @@ def test_tournament_until_error(max_steps=1000):
                     print(f"Big blind: {table.game.big_blind}")
                     print(f"To call: {max(0, table.game.current_bet - player.current_bet)}")
             
-            return f"ERROR: {type(e).__name__}: {e}"
+            # Re-raise the exception to fail the test
+            raise e
     
     print(f"Test completed {max_steps} steps without errors (but tournament may not be finished)")
     stats = env.get_tournament_stats()
     print(f"Final stats: {stats}")
-    return "TIMEOUT"
+    # This might happen in very long tournaments
+    assert stats['remaining_players'] >= 1, "Should have at least one player remaining"
 
 if __name__ == "__main__":
-    result = test_tournament_until_error(max_steps=2000)
-    print(f"\nTest result: {result}")
+    test_tournament_until_error(max_steps=2000)
+    print(f"\nTest completed successfully!")

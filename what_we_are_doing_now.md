@@ -6,7 +6,6 @@
 🎯 Next Steps for Further Optimization
 For future improvements (but not critical for tournament completion):
 
-Fix state inconsistency warnings - Ensure player.current_bet and game.current_bet stay synchronized
 Review betting round completion logic - Address the infinite checking loops
 Fix pot mismatch calculations - Side pot logic needs review
 

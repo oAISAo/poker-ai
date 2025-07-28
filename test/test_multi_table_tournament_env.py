@@ -2,6 +2,11 @@ import pytest
 import numpy as np
 from env.multi_table_tournament_env import MultiTableTournamentEnv, Table
 from engine.player import Player
+from env.rule_based_tournament_env import RuleBasedTournamentEnv
+# Capture output during multiple balancing calls
+import io
+import sys
+from contextlib import redirect_stdout
 
 def test_multi_table_tournament_initialization():
     """Test that multi-table tournament initializes correctly"""
@@ -622,7 +627,6 @@ def test_rapid_elimination_scenario():
 
 def test_sharky_stack_tracking_accuracy():
     """Test that Sharky's stack is accurately tracked and reported after eliminations"""
-    from env.rule_based_tournament_env import RuleBasedTournamentEnv
     
     env = RuleBasedTournamentEnv(total_players=6, max_players_per_table=6)
     obs, info = env.reset()
@@ -706,11 +710,6 @@ def test_elimination_message_spam_prevention():
     for player in players_to_eliminate:
         player.stack = 0
     
-    # Capture output during multiple balancing calls
-    import io
-    import sys
-    from contextlib import redirect_stdout
-    
     captured_output = io.StringIO()
     with redirect_stdout(captured_output):
         # Call table balancing multiple times (this used to cause spam)
@@ -793,11 +792,6 @@ def test_debug_message_prefixes():
     player_to_eliminate = env.all_players[1]
     player_to_eliminate.stack = 0
     
-    # Capture output
-    import io
-    import sys
-    from contextlib import redirect_stdout
-    
     captured_output = io.StringIO()
     with redirect_stdout(captured_output):
         env._check_table_balancing()
@@ -830,11 +824,6 @@ def test_betting_error_debug_prefix():
     # Temporarily replace step method
     game.step = mock_step_with_error
     
-    # Capture output
-    import io
-    import sys
-    from contextlib import redirect_stdout
-    
     captured_output = io.StringIO()
     with redirect_stdout(captured_output):
         try:
@@ -854,7 +843,6 @@ def test_betting_error_debug_prefix():
 
 def test_player_reference_consistency():
     """Test that player references remain consistent across table operations"""
-    from env.rule_based_tournament_env import RuleBasedTournamentEnv
     
     env = RuleBasedTournamentEnv(total_players=9, max_players_per_table=9)
     obs, info = env.reset()
@@ -1008,3 +996,85 @@ def test_rapid_elimination_scenario_completion():
     if not env._tournament_finished():
         mask = env.legal_action_mask()
         assert any(mask), "Should have legal actions with remaining players"
+
+def test_tournament_state_isolation_and_cleanup():
+    """Test that tournament state is properly isolated between test runs"""
+    # This tests the fix for: test isolation issues causing inconsistent results
+    
+    # First tournament instance
+    env1 = RuleBasedTournamentEnv(total_players=6, max_players_per_table=6)
+    obs1, info1 = env1.reset()
+    
+    # Modify state in first tournament
+    env1.elimination_order = [env1.all_players[0], env1.all_players[1]]
+    env1.current_blind_level = 3
+    
+    # Find Player_0 (Sharky) and modify their stack
+    sharky1 = None
+    for table in env1.tables.values():
+        for player in table.players:
+            if player.name == "Player_0":
+                sharky1 = player
+                break
+        if sharky1:
+            break
+    
+    assert sharky1 is not None
+    sharky1.stack = 2500  # Modified stack
+    
+    # Create second tournament instance - should have clean state
+    env2 = RuleBasedTournamentEnv(total_players=6, max_players_per_table=6)
+    obs2, info2 = env2.reset()
+    
+    # Verify second tournament has clean state
+    assert len(env2.elimination_order) == 0, "Elimination order should be empty in new tournament"
+    assert env2.current_blind_level == 0, "Blind level should be 0 in new tournament"
+    
+    # Find Player_0 (Sharky) in second tournament
+    sharky2 = None
+    for table in env2.tables.values():
+        for player in table.players:
+            if player.name == "Player_0":
+                sharky2 = player
+                break
+        if sharky2:
+            break
+    
+    assert sharky2 is not None
+    assert sharky2.stack == 1000, f"Sharky should have starting stack (1000), got {sharky2.stack}"
+    assert sharky2 is not sharky1, "Should be different Player objects"
+    
+    # Test that modifying first tournament doesn't affect second
+    sharky1.stack = 3000
+    assert sharky2.stack == 1000, "Second tournament player should be unaffected"
+
+def test_robust_state_tracking_across_operations():
+    """Test that player state tracking works correctly across table operations"""
+    # This tests the robustness improvements we made to state tracking
+    env = MultiTableTournamentEnv(total_players=12, max_players_per_table=6)
+    obs, info = env.reset()
+    
+    # Find a specific player and track them
+    target_player = env.all_players[5]  # Pick player 5
+    original_stack = target_player.stack
+    
+    # Modify their stack
+    target_player.stack = 1337  # Unique value for tracking
+    
+    # Perform operations that might affect state tracking
+    env._check_table_balancing()
+    env._update_elimination_order()
+    
+    # Player should still be trackable with correct stack
+    found_player = None
+    for table in env.tables.values():
+        for player in table.players:
+            if player.name == target_player.name:
+                found_player = player
+                break
+        if found_player:
+            break
+    
+    assert found_player is not None, f"Should be able to find player {target_player.name}"
+    assert found_player.stack == 1337, f"Player stack should be preserved, got {found_player.stack}"
+    assert found_player is target_player, "Should be the same object reference"

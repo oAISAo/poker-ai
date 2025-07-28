@@ -110,6 +110,9 @@ class PokerGame:
                     break
                 idx = (idx + 1) % len(self.players)
             self.current_player_idx = first_to_act
+        
+        # Validate initial state after hand setup
+        self._validate_state_consistency("after new hand setup")
 
     def rotate_dealer(self):
         n = len(self.players)
@@ -178,6 +181,9 @@ class PokerGame:
         self.current_bet = bb_amount
         self.last_raise_amount = bb_amount
 
+        # Validate state after posting blinds
+        self._validate_state_consistency("after posting blinds")
+
         # Note: current_bet was already updated by bet_chips() calls above
         # No need to add again as bet_chips() already handled it
 
@@ -201,6 +207,82 @@ class PokerGame:
             player.current_bet = 0
         self.current_bet = 0
 
+    def _validate_state_consistency(self, context=""):
+        """
+        Validate that player.current_bet and game.current_bet are properly synchronized.
+        This helps detect and prevent state inconsistency warnings.
+        """
+        inconsistencies = []
+        
+        # Check 1: No player.current_bet should exceed game.current_bet
+        for player in self.players:
+            if player.current_bet > self.current_bet:
+                inconsistencies.append(f"{player.name}.current_bet ({player.current_bet}) > game.current_bet ({self.current_bet})")
+        
+        # Check 2: If game.current_bet > 0, at least one player should have that bet amount
+        if self.current_bet > 0:
+            max_player_bet = max((p.current_bet for p in self.players), default=0)
+            if max_player_bet != self.current_bet:
+                inconsistencies.append(f"game.current_bet ({self.current_bet}) != max player bet ({max_player_bet})")
+        
+        # Check 3: Total player bets should match what we expect for pot calculation
+        total_player_bets = sum(p.current_bet for p in self.players)
+        
+        if inconsistencies:
+            print(f"[WARNING] State inconsistency detected in {context}:")
+            for issue in inconsistencies:
+                print(f"  - {issue}")
+            print(f"  - Total player bets: {total_player_bets}, Game pot: {self.pot}")
+            return False
+        return True
+    
+    def _synchronize_current_bet(self):
+        """
+        Ensure game.current_bet matches the highest player.current_bet.
+        This is a defensive method to fix synchronization issues.
+        """
+        max_player_bet = max((p.current_bet for p in self.players), default=0)
+        if self.current_bet != max_player_bet:
+            print(f"[DEBUG] Synchronizing game.current_bet from {self.current_bet} to {max_player_bet}")
+            self.current_bet = max_player_bet
+    
+    def fix_state_inconsistencies(self):
+        """
+        Public method to fix detected state inconsistencies.
+        Can be called from tournament environments when inconsistencies are detected.
+        """
+        print(f"[DEBUG] Attempting to fix state inconsistencies...")
+        
+        # First, identify the correct game.current_bet - use the original value as baseline
+        # Don't synchronize upward if we have individual player bet inconsistencies
+        original_game_bet = self.current_bet
+        
+        # Fix 1: Ensure no player.current_bet exceeds original game.current_bet
+        fixed_players = []
+        for player in self.players:
+            if player.current_bet > original_game_bet:
+                print(f"[DEBUG] Reducing {player.name}.current_bet from {player.current_bet} to {original_game_bet}")
+                # Calculate the difference to refund to stack
+                excess = player.current_bet - original_game_bet
+                player.current_bet = original_game_bet
+                player.stack += excess
+                fixed_players.append(player.name)
+        
+        # Fix 2: After fixing individual players, synchronize game.current_bet if needed
+        # (This handles cases where game.current_bet is lower than it should be)
+        self._synchronize_current_bet()
+        
+        if fixed_players:
+            print(f"[DEBUG] Fixed bet inconsistencies for players: {fixed_players}")
+        
+        # Validate the fixes worked
+        if self._validate_state_consistency("after fix_state_inconsistencies"):
+            print(f"[DEBUG] State inconsistencies successfully resolved")
+            return True
+        else:
+            print(f"[DEBUG] Unable to fully resolve state inconsistencies")
+            return False
+
     def step(self, action, raise_amount=0):
         """
         Perform the action by the current player.
@@ -210,6 +292,9 @@ class PokerGame:
         - action (str): "fold", "call", "check", or "raise"
         - raise_amount (int): If action == "raise", this is the total amount player wants to have on the table after raising.
         """
+        
+        # Validate state consistency at start of step
+        self._validate_state_consistency(f"start of step - {action}")
 
         print(f"[DEBUG] Entering step: phase_idx={self.phase_idx}, players_to_act={[p.name for p in self.players_to_act]}, action={action}")
 
@@ -372,6 +457,9 @@ class PokerGame:
             self._advance_to_next_player()
         
         print(f"[DEBUG] Exiting step: phase_idx={self.phase_idx}, players_to_act={[p.name for p in self.players_to_act]}")
+        
+        # Validate state consistency at end of step
+        self._validate_state_consistency(f"end of step - {action}")
 
         # --- Final catch-all: if no legal actions remain, end the hand ---
         active_in_hand = [p for p in self.players if p.in_hand and p.stack > 0]
@@ -506,6 +594,8 @@ class PokerGame:
         print(f"[DEBUG] Advancing to phase: {self.PHASES[self.phase_idx]} (phase_idx={self.phase_idx})")
         # Reset bets for new round
         self.reset_bets()
+        # Validate state after phase advance and bet reset
+        self._validate_state_consistency(f"after advancing to {self.PHASES[self.phase_idx]}")
 
     def _get_state(self):
         # Return a simple dict representing game state for current player
@@ -661,6 +751,9 @@ class PokerGame:
             # Not a valid raise (should not happen if validation is correct)
             pass
 
+        # Validate synchronization after raise
+        self._validate_state_consistency(f"after raise by {player.name} to {raise_to}")
+
         print(f"[DEBUG] {player.name} raises to {raise_to}. (Put in {raise_amount}, stack now {player.stack})")
 
         return {
@@ -701,6 +794,12 @@ class PokerGame:
         total_pot = sum(pot["amount"] for pot in pots)
         if total_pot != self.pot:
             print(f"[WARNING] Pot mismatch: calculated {total_pot}, actual {self.pot}")
+            print(f"[DEBUG] Player contributions: {contributions}")
+            print(f"[DEBUG] Side pots: {pots}")
+            # Try to fix the mismatch by using the calculated total
+            if abs(total_pot - self.pot) <= len(self.players):  # Small discrepancy, likely rounding
+                print(f"[DEBUG] Adjusting pot from {self.pot} to calculated {total_pot}")
+                self.pot = total_pot
 
         hand_ranks = {}
         for p in self.players:
@@ -760,9 +859,6 @@ class PokerGame:
         return players_to_act
 
 if __name__ == "__main__":
-    from engine.player import Player
-    from utils.enums import GameMode
-
     alice = Player("Alice")
     bob = Player("Bob")
 

@@ -90,7 +90,8 @@ def test_dealer_rotation():
             
             if done or truncated:
                 print(f"    Tournament ended during hand {hand_num + 1}")
-                return hand_info
+                assert len(hand_info) > 0, "Should have recorded at least one hand"
+                return
         
         # Check if hand completed properly
         if game.hand_over:
@@ -118,7 +119,9 @@ def test_dealer_rotation():
     print("2. Each hand, a different player posts BB") 
     print("3. Pattern should be: Hand N's BB becomes Hand N+1's SB")
     
-    return hand_info
+    # Assert that we have recorded hand information
+    assert len(hand_info) > 0, "Should have recorded at least one hand"
+    assert all('pot_after_blinds' in h for h in hand_info), "All hands should have pot information"
 
 def test_blind_amounts():
     """Test that blind amounts are posted correctly"""
@@ -149,14 +152,13 @@ def test_blind_amounts():
         elif change == 0:
             print(f"No blind posted: {name}")
     
-    return game.pot == 15
+    assert game.pot == 15, f"Expected pot of 15, got {game.pot}"
 
 if __name__ == "__main__":
     print("🔍 Testing Dealer Rotation and Blind Mechanics...\n")
     
-    hand_info = test_dealer_rotation()
-    blind_test = test_blind_amounts()
+    test_dealer_rotation()
+    test_blind_amounts()
     
     print(f"\n📊 Results:")
-    print(f"  Blind amounts correct: {'✅ PASS' if blind_test else '❌ FAIL'}")
-    print(f"  Dealer rotation tracked: {'✅ PASS' if hand_info else '❌ FAIL'}")
+    print(f"  Tests completed successfully: ✅ PASS")

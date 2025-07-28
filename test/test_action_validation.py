@@ -205,6 +205,35 @@ def test_opening_bet_less_than_big_blind_but_all_in_pass():
     result = validate_raise(raise_to=10, player_stack=10, to_call=0, current_bet=0, min_raise=20, big_blind=20, player_current_bet=0)
     assert result.is_all_in
 
+def test_opening_bet_validation_with_current_bet():
+    """Test the specific fix: opening bet must raise by at least big blind above current bet."""
+    # This tests the fix where Bob tries to raise to 25 when current bet is 20 and big blind is 20
+    # Should fail because raise amount (25-20=5) is less than big blind (20)
+    with pytest.raises(ActionValidationError, match="Opening bet must raise by at least the big blind \\(20\\)"):
+        validate_raise(raise_to=25, player_stack=100, to_call=0, current_bet=20, min_raise=20, big_blind=20, player_current_bet=0)
+    
+    # This should pass: raising to 40 when current bet is 20 and big blind is 20 (raise amount = 20)
+    result = validate_raise(raise_to=40, player_stack=100, to_call=0, current_bet=20, min_raise=20, big_blind=20, player_current_bet=0)
+    assert not result.is_all_in
+    assert result.raise_amount == 20  # 40 - 20 = 20 (exactly big blind)
+
+def test_opening_bet_edge_cases():
+    """Test edge cases for opening bet validation"""
+    # Case 1: All-in opening bet below minimum should pass if above current bet
+    result = validate_raise(raise_to=30, player_stack=30, to_call=0, current_bet=20, min_raise=20, big_blind=20, player_current_bet=0)
+    assert result.is_all_in
+    assert result.raise_amount == 10  # 30 - 20 = 10 (less than big blind but all-in)
+    
+    # Case 2: Opening bet exactly big blind above current bet should pass
+    result = validate_raise(raise_to=50, player_stack=100, to_call=0, current_bet=30, min_raise=20, big_blind=20, player_current_bet=0)
+    assert not result.is_all_in
+    assert result.raise_amount == 20  # 50 - 30 = 20 (exactly big blind)
+    
+    # Case 3: Opening bet more than big blind above current bet should pass
+    result = validate_raise(raise_to=80, player_stack=100, to_call=0, current_bet=30, min_raise=20, big_blind=20, player_current_bet=0)
+    assert not result.is_all_in
+    assert result.raise_amount == 50  # 80 - 30 = 50 (more than big blind)
+
 def test_raise_to_less_than_current_bet_to_call_zero_fails():
     """Raise with to_call=0 but raise_to less than current_bet should fail."""
     with pytest.raises(ActionValidationError, match="Raise must be greater than player's current bet."):

@@ -75,7 +75,7 @@ def test_basic_tournament_progression():
     final_eliminated = len(env.elimination_order)
     print(f"Final: {final_remaining} remaining, {final_eliminated} eliminated")
     
-    return final_eliminated > 0  # Did anyone get eliminated?
+    assert final_eliminated > 0, "At least one player should be eliminated in tournament progression"
 
 def test_rule_based_tournament_progression():
     """Test if rule-based tournament progresses properly"""
@@ -123,7 +123,7 @@ def test_rule_based_tournament_progression():
     final_eliminated = len(env.elimination_order)
     print(f"Final: {final_remaining} remaining, {final_eliminated} eliminated")
     
-    return final_eliminated > 0
+    assert final_eliminated > 0, "At least one player should be eliminated in rule-based tournament"
 
 def test_forced_elimination():
     """Test forced elimination to check tracking"""
@@ -149,7 +149,8 @@ def test_forced_elimination():
     # Check if tournament detection works
     print(f"Tournament finished: {env._tournament_finished()}")
     
-    return len(env.elimination_order) > 0
+    assert len(env.elimination_order) > 0, "Player should be added to elimination order"
+    assert player_to_eliminate in env.elimination_order, "Eliminated player should be in elimination order"
 
 def test_game_step_functionality():
     """Test if individual game steps work properly"""
@@ -193,10 +194,12 @@ def test_game_step_functionality():
         print(f"New current player: {table.players[game.current_player_idx].name if game.current_player_idx < len(table.players) else 'INVALID'}")
         print(f"Hand over: {game.hand_over}")
         
-        return True
+        # Validate that step completed successfully
+        assert obs is not None, "Observation should not be None after step"
+        assert isinstance(reward, (int, float)), "Reward should be numeric"
     else:
         print("No legal actions available!")
-        return False
+        assert False, "Should have at least one legal action available at start of tournament"
 
 def test_player_0_consistency():
     """Test that Player_0 stays at index 0"""
@@ -214,34 +217,27 @@ def test_player_0_consistency():
         
         if player_0_index != 0:
             print(f"ERROR: Player_0 not at index 0!")
-            return False
+            assert False, f"Player_0 should be at index 0, but found at {player_0_index}"
     
     print("Player_0 consistently at index 0 ✓")
-    return True
+    assert True  # Test passed
 
 def run_all_tests():
     """Run all debugging tests"""
     print("🔍 Running Tournament Debugging Tests...")
     
-    results = {}
-    results['basic_progression'] = test_basic_tournament_progression()
-    results['rule_based_progression'] = test_rule_based_tournament_progression()
-    results['forced_elimination'] = test_forced_elimination()
-    results['game_step_functionality'] = test_game_step_functionality()
-    results['player_0_consistency'] = test_player_0_consistency()
+    print("Running basic progression test...")
+    test_basic_tournament_progression()
+    print("Running rule-based progression test...")
+    test_rule_based_tournament_progression()  
+    print("Running forced elimination test...")
+    test_forced_elimination()
+    print("Running game step functionality test...")
+    test_game_step_functionality()
+    print("Running player 0 consistency test...")
+    test_player_0_consistency()
     
-    print("\n📊 Test Results:")
-    for test_name, passed in results.items():
-        status = "✅ PASS" if passed else "❌ FAIL"
-        print(f"  {test_name}: {status}")
-    
-    failed_tests = [name for name, passed in results.items() if not passed]
-    if failed_tests:
-        print(f"\n🚨 Failed tests: {failed_tests}")
-        return False
-    else:
-        print("\n🎉 All tests passed!")
-        return True
+    print("\n🎉 All tests completed successfully!")
 
 if __name__ == "__main__":
     run_all_tests()

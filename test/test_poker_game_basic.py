@@ -708,6 +708,103 @@ def test_players_to_act_resets_each_betting_round():
     assert game.players_to_act == []
     assert game.phase_idx == 2
 
+def test_side_pot_betting_round_completion():
+    """Test that betting rounds complete correctly when all-in players have different bet amounts (side pots)"""
+    # This tests the fix for: betting round completion with side pot scenarios
+    alice = Player("Alice", stack=1000)
+    bob = Player("Bob", stack=100)    # Short stack for all-in scenario
+    charlie = Player("Charlie", stack=1000)
+    
+    game = PokerGame([alice, bob, charlie], small_blind=10, big_blind=20)
+    game.reset_for_new_hand(is_first_hand=True)
+    
+    # Store initial phase to check phase advancement
+    initial_phase = game.phase_idx
+    
+    # Alice raises to 300 (more than Bob's stack)
+    game.current_player_idx = 0  # Alice
+    game.step("raise", 300)
+    alice_bet_after_raise = alice.current_bet  # Should be 300
+    
+    # Bob goes all-in for 100 (less than Alice's bet, creating side pot scenario)
+    game.current_player_idx = 1  # Bob  
+    game.step("call", 0)  # This will make Bob all-in for his remaining stack
+    assert bob.all_in is True
+    assert bob.stack == 0
+    bob_bet_after_call = bob.current_bet  # Should be 100 (initial SB + all-in amount)
+    
+    # Charlie calls the full 300
+    game.current_player_idx = 2  # Charlie
+    # Before Charlie's action, store betting state for verification
+    pre_charlie_phase = game.phase_idx
+    
+    game.step("call", 0)
+    
+    # Verify the betting round advanced properly with mixed all-in/active player scenarios
+    # The game should have automatically advanced to the next phase because:
+    # - Alice and Charlie both called/raised to 300 (equal bets among non-all-in players)
+    # - Bob is all-in with 100 (side pot scenario)
+    # - All players have acted and betting is complete
+    assert game.phase_idx > initial_phase, "Game should have advanced to next phase"
+    assert game.players_to_act == [], "No players should have pending actions"
+    
+    # Verify side pot scenario was handled correctly:
+    # - Non-all-in players (Alice, Charlie) had equal final bets before phase advancement
+    # - All-in player (Bob) contributed what he could
+    assert alice_bet_after_raise == 300, "Alice should have bet 300"
+    assert bob_bet_after_call == 100, "Bob should have gone all-in for 100 total"
+    
+    # Verify pot calculation includes all contributions
+    expected_pot = 30 + 300 + 90 + 280  # blinds + Alice's raise + Bob's all-in + Charlie's call
+    assert game.pot == expected_pot, f"Pot should be {expected_pot}, got {game.pot}"
+
+def test_mixed_all_in_and_active_players_betting_completion():
+    """Test betting round completion with mix of all-in and active players"""
+    players = [Player(f"P{i}", stack=500 if i < 2 else 100) for i in range(4)]  # P0,P1 have 500, P2,P3 have 100
+    game = PokerGame(players, small_blind=10, big_blind=20)
+    game.reset_for_new_hand(is_first_hand=True)
+    
+    initial_phase = game.phase_idx
+    
+    # P0 raises to 200 (more than short stacks can call)
+    game.current_player_idx = 0
+    game.step("raise", 200)
+    p0_bet = players[0].current_bet  # Should be 200
+    
+    # P1 calls 200
+    game.current_player_idx = 1
+    game.step("call", 0)
+    p1_bet = players[1].current_bet  # Should be 200
+    
+    # P2 goes all-in for 100 (short stack)
+    game.current_player_idx = 2
+    game.step("call", 0)  # All-in for remaining stack
+    assert players[2].all_in is True
+    p2_bet = players[2].current_bet  # Should be 100
+    
+    # P3 goes all-in for 100 (short stack)  
+    game.current_player_idx = 3
+    game.step("call", 0)  # All-in for remaining stack
+    assert players[3].all_in is True
+    
+    # Verify the betting round completed correctly
+    # Game should advance to next phase because:
+    # - Non-all-in players (P0, P1) have equal bets (200)
+    # - All-in players (P2, P3) contributed what they could (100 each)
+    # - All players have acted
+    assert game.phase_idx > initial_phase, "Game should have advanced to next phase"
+    assert game.players_to_act == [], "No players should have pending actions"
+    
+    # Verify bet amounts before phase advancement
+    assert p0_bet == 200, "P0 should have bet 200"
+    assert p1_bet == 200, "P1 should have bet 200" 
+    assert p2_bet == 100, "P2 should have gone all-in for 100 total"
+    # P3's bet amount should reflect their all-in (100 total including any blind)
+    
+    # Verify all short stacks are all-in with zero remaining chips
+    assert players[2].stack == 0, "P2 should be all-in with 0 chips"
+    assert players[3].stack == 0, "P3 should be all-in with 0 chips"
+
 def test_big_blind_raises_to_100():
     dealer = Player("Dealer", stack=1000, is_human=False)
     sb = Player("SmallBlind", stack=1000, is_human=False)
@@ -883,6 +980,105 @@ def test_player_reset_for_new_hand():
     assert player.current_bet == 0
     assert player.all_in is False
     assert player.hole_cards == []
+
+def test_comprehensive_fixes_integration():
+    """Comprehensive test integrating all the fixes we implemented"""
+    # This test combines multiple scenarios to ensure all fixes work together correctly
+    
+    # Setup: 4 players with different stack sizes for complex betting scenarios
+    alice = Player("Alice", stack=1000)  # Deep stack
+    bob = Player("Bob", stack=200)       # Medium stack  
+    charlie = Player("Charlie", stack=50)  # Short stack
+    diana = Player("Diana", stack=1000)   # Deep stack
+    
+    game = PokerGame([alice, bob, charlie, diana], small_blind=10, big_blind=20)
+    game.reset_for_new_hand(is_first_hand=True)
+    
+    # Test scenario combining action validation and betting round completion
+    
+    # Alice opens with a bet that tests opening bet validation
+    game.current_player_idx = 0
+    # This should pass: opening bet of 60 when current bet is 20, raise amount = 40 > big blind (20)
+    game.step("raise", 60)
+    assert game.current_bet == 60
+    
+    # Bob calls (will be all-in situation)
+    game.current_player_idx = 1
+    game.step("call", 0)
+    # Bob should be close to all-in or all-in depending on starting position
+    
+    # Charlie goes all-in (creating side pot scenario)
+    game.current_player_idx = 2
+    game.step("call", 0)  # All-in for whatever he has left
+    assert charlie.all_in is True
+    
+    # Diana calls the full amount
+    game.current_player_idx = 3  
+    game.step("call", 0)
+    
+    # Test that betting round completes correctly with mixed all-in/active players
+    # This tests our fix for side pot betting round completion
+    assert game._betting_round_complete() is True
+    assert game.players_to_act == []
+    
+    # Verify the game can advance to next phase
+    original_phase = game.phase_idx
+    # The game should automatically advance phases when betting is complete
+    
+    # Test opening bet validation in subsequent rounds
+    if not game.hand_over and game.phase_idx > original_phase:
+        # Find non-all-in player for next betting round test
+        active_players = [p for p in game.players if p.in_hand and not p.all_in and p.stack > 0]
+        if len(active_players) >= 2:
+            # Reset to test another opening bet scenario
+            game.reset_bets()
+            game.current_bet = 0
+            
+            # Test that small opening bet fails (action validation fix)
+            game.current_player_idx = game.players.index(active_players[0])
+            try:
+                # This should fail: trying to bet only 10 when big blind is 20
+                with pytest.raises(ActionValidationError):
+                    game.step("raise", 10)
+            except ActionValidationError:
+                pass  # Expected
+            
+            # This should pass: proper opening bet
+            game.step("raise", 40)  # 40 > big blind (20)
+            assert game.current_bet == 40
+
+def test_texas_holdem_rules_compliance_verification():
+    """Verification that our fixes maintain strict Texas Hold'em rules compliance"""
+    alice = Player("Alice", stack=1000)
+    bob = Player("Bob", stack=1000)
+    
+    game = PokerGame([alice, bob], small_blind=10, big_blind=20)
+    game.reset_for_new_hand(is_first_hand=True)
+    
+    # Test 1: Minimum raise rule compliance
+    game.current_player_idx = 0  # Alice (Small Blind/Dealer in heads-up)
+    # Alice should be able to raise to at least 40 (current bet 20 + big blind 20)
+    game.step("raise", 40)
+    assert game.current_bet == 40
+    alice_bet_after_raise = alice.current_bet  # Should be 40
+    
+    # Test 2: Bob must be able to re-raise by at least the previous raise amount
+    game.current_player_idx = 1  # Bob (Big Blind)
+    # Previous raise was 20 (40-20), so Bob must raise by at least 20 more
+    game.step("raise", 60)  # 40 + 20 = 60 (minimum legal re-raise)
+    assert game.current_bet == 60
+    bob_bet_after_raise = bob.current_bet  # Should be 60
+    
+    # Test 3: Betting round completion follows Texas Hold'em rules
+    initial_phase = game.phase_idx
+    game.current_player_idx = 0  # Back to Alice
+    game.step("call", 0)  # Alice calls the 60
+    
+    # Verify both players had equal bets before phase advancement and game progressed
+    assert game.phase_idx > initial_phase, "Game should have advanced to next phase"
+    assert alice_bet_after_raise == 40, "Alice should have raised to 40"
+    assert bob_bet_after_raise == 60, "Bob should have raised to 60"
+    assert game.players_to_act == [], "No players should have pending actions after betting completion"
 
 if __name__ == "__main__":
     pytest.main(["-v", __file__])
