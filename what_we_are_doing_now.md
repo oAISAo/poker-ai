@@ -3,12 +3,6 @@
 # Poker AI Agent Development Plan
 
 
-🎯 Next Steps for Further Optimization
-For future improvements (but not critical for tournament completion):
-
-Review betting round completion logic - Address the infinite checking loops
-Fix pot mismatch calculations - Side pot logic needs review
-
 
 
 ## Phase 1: Sharky Self-Play Evolution

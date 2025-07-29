@@ -40,10 +40,12 @@ class TestAnteInPokerGame:
         bb_pos = (game.dealer_position + 2) % len(players)
         bb_player = players[bb_pos]
         
-        # BB should have paid: big blind (100) + total ante (100) = 200
-        # In our implementation, total ante = big blind amount
-        expected_bb_payment = 100 + 100  # BB + total_ante (which equals BB)
-        assert bb_player.current_bet == expected_bb_payment
+        # BB should have current_bet = big blind only (100)
+        # Ante doesn't count toward current_bet in Texas Hold'em
+        assert bb_player.current_bet == 100
+        
+        # But BB should have total_contributed = BB + ante (200)
+        assert bb_player.total_contributed == 200
         
         # Pot should include blinds + antes
         # SB (50) + BB (100) + total ante (100) = 250
@@ -65,7 +67,13 @@ class TestAnteInPokerGame:
         
         # BB should go all-in with their remaining chips
         assert bb_player.stack == 0
-        assert bb_player.current_bet == 150  # All their chips
+        
+        # BB current_bet should be only the big blind amount (100)
+        # because that's all they could afford after paying ante (100) + BB (50)
+        # Wait, let me recalculate: ante (100) + BB (100) = 200, but they only had 150
+        # So they pay ante (100) first, leaving 50, then pay BB (50), current_bet = 50
+        assert bb_player.current_bet == 50  # Only what they could pay toward BB
+        assert bb_player.total_contributed == 150  # All their chips
     
     def test_ante_with_heads_up(self):
         """Test ante payment in heads-up play"""
@@ -77,9 +85,13 @@ class TestAnteInPokerGame:
         # In heads-up: dealer is SB, other player is BB
         bb_player = players[1] if players[0] == game.players[game.dealer_position] else players[0]
         
-        # BB pays: BB (100) + total ante (100) = 200
+        # BB current_bet should be only the big blind (100)
+        # Ante doesn't count toward current_bet
+        assert bb_player.current_bet == 100
+        
+        # BB total_contributed should be BB + ante (100 + 100) = 200
         # In our implementation, total ante = big blind amount
-        assert bb_player.current_bet == 200
+        assert bb_player.total_contributed == 200
         
         # Pot should be: SB (50) + BB (100) + total ante (100) = 250
         assert game.pot == 250
@@ -297,12 +309,14 @@ class TestAnteEdgeCases:
         game = PokerGame(players, small_blind=10, big_blind=20, ante=25)
         game.reset_for_new_hand(is_first_hand=True)
         
-        # Should work - BB pays 20 + total ante (20) = 40
+        # BB current_bet should be only the big blind (20)
+        # Ante doesn't count toward current_bet in Texas Hold'em
         bb_pos = (game.dealer_position + 2) % len(players)
         bb_player = players[bb_pos]
         
-        expected_payment = 20 + 20  # BB + total ante (equals BB)
-        assert bb_player.current_bet == expected_payment
+        assert bb_player.current_bet == 20  # Only the BB amount
+        # BB total_contributed should be BB + total ante (20 + 20 = 40)
+        assert bb_player.total_contributed == 40
     
     def test_ante_with_minimum_players(self):
         """Test ante with minimum number of players (2)"""
@@ -312,11 +326,15 @@ class TestAnteEdgeCases:
         game.reset_for_new_hand(is_first_hand=True)
         
         # In heads-up, dealer is SB, other is BB
-        # BB pays: 20 + total ante (20) = 40
+        # BB current_bet should be only the big blind (20)
+        # Ante doesn't count toward current_bet in Texas Hold'em
         bb_player = players[1] if players[0] == game.players[game.dealer_position] else players[0]
-        assert bb_player.current_bet == 40
+        assert bb_player.current_bet == 20
         
-        # Total pot: 10 + 20 + 20 = 50
+        # BB total_contributed should be BB + total ante (20 + 20 = 40)
+        assert bb_player.total_contributed == 40
+        
+        # Total pot: SB (10) + BB (20) + total ante (20) = 50
         assert game.pot == 50
 
 

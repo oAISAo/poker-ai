@@ -31,6 +31,20 @@ class Player:
             print(f"[DEBUG] {self.name} bets {actual_bet}. Remaining stack: {self.stack}")
         return actual_bet
 
+    def post_ante(self, amount, suppress_log=False):
+        """Post ante - doesn't count toward current_bet, only total_contributed and pot"""
+        print(f"[DEBUG post_ante] {self.name} called post_ante({amount}, suppress_log={suppress_log})")
+        actual_ante = min(self.stack, amount)
+        self.stack -= actual_ante
+        # NOTE: Ante does NOT count toward current_bet in Texas Hold'em
+        # self.current_bet += actual_ante  # <-- This line is intentionally commented out
+        self.total_contributed += actual_ante  # Track total for side pots
+        if self.stack == 0:
+            self.all_in = True  # Player is all-in if no chips left
+        if not suppress_log:
+            print(f"[DEBUG] {self.name} posts ante of {actual_ante}. Remaining stack: {self.stack}")
+        return actual_ante
+
     def fold(self):
         self.in_hand = False
         print(f"[DEBUG] {self.name} folds.")

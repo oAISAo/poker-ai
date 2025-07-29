@@ -160,7 +160,7 @@ class PokerGame:
             
             ante_paid = min(bb_player.stack, total_ante)
             if ante_paid > 0:
-                bb_player.bet_chips(ante_paid, suppress_log=True)
+                bb_player.post_ante(ante_paid, suppress_log=True)
                 self.pot += ante_paid
                 print(f"[DEBUG] {bb_player.name} posts ante of {ante_paid} (total ante = BB). Remaining stack: {bb_player.stack}")
 
@@ -190,6 +190,9 @@ class PokerGame:
         self.players_who_posted_blinds = {sb_player.name, bb_player.name}
 
     def deal_hole_cards(self):
+        if self.deck is None:
+            raise RuntimeError("Deck is not initialized. Call reset_for_new_hand() first.")
+        
         for player in self.players:
             if player.in_hand and player.stack > 0:
                 player.hole_cards = self.deck.draw(2)
@@ -198,6 +201,9 @@ class PokerGame:
                 player.hole_cards = []
 
     def deal_community_cards(self, number):
+        if self.deck is None:
+            raise RuntimeError("Deck is not initialized. Call reset_for_new_hand() first.")
+        
         cards = self.deck.draw(number)
         self.community_cards.extend(cards)
         print(f"[DEBUG] Community cards dealt: {self.community_cards}")
@@ -537,24 +543,17 @@ class PokerGame:
             else:
                 print("Invalid action, try again.")
 
-    def _players_to_act_after(self, raiser):
-        """
-        Returns a list of all in-hand, not-all-in players who must act after a raise,
-        in table order, starting with the next player after the raiser, wrapping around,
-        and excluding the raiser.
-        """
-        players = []
-        n = len(self.players)
-        raiser_idx = self.players.index(raiser)
-        idx = (raiser_idx + 1) % n
-        while idx != raiser_idx:
-            p = self.players[idx]
-            if p.in_hand and not p.all_in:
-                players.append(p)
-            idx = (idx + 1) % n
-        return players
-
     def _advance_to_next_player(self):
+        if self.current_player_idx is None:
+            # Initialize to first active player if not set
+            for i, player in enumerate(self.players):
+                if player.in_hand and not player.all_in and player.stack > 0:
+                    self.current_player_idx = i
+                    return
+            # No valid players found
+            self.hand_over = True
+            return
+        
         num_players = len(self.players)
         for _ in range(num_players):
             self.current_player_idx = (self.current_player_idx + 1) % num_players
@@ -777,19 +776,35 @@ class PokerGame:
         # Use total_contributed for side pot calculation
         contributions = {p: p.total_contributed for p in self.players}
         pots = []
+        
+        # Get all unique contribution levels, sorted
         bet_levels = sorted(set([amt for amt in contributions.values() if amt > 0]))
-        prev = 0
-        remaining_players = set(self.players)
+        
+        if not bet_levels:
+            print("[DEBUG] No contributions found for side pot calculation")
+            return
+        
+        # Build side pots correctly
+        prev_level = 0
+        active_players = [p for p in self.players if contributions[p] > 0]
+        
         for level in bet_levels:
-            pot_players = [p for p in remaining_players if contributions[p] >= level]
-            if not pot_players:
-                continue
-            pot_size = (level - prev) * len(pot_players)
-            pots.append({"amount": pot_size, "players": pot_players.copy()})
-            prev = level
-            for p in list(remaining_players):
-                if contributions[p] == level:
-                    remaining_players.remove(p)
+            # Calculate pot size for this level
+            pot_amount = (level - prev_level) * len(active_players)
+            
+            # Players eligible for this pot are those who contributed at least this level
+            eligible_players = [p for p in active_players if contributions[p] >= level]
+            
+            if pot_amount > 0 and eligible_players:
+                pots.append({
+                    "amount": pot_amount,
+                    "players": eligible_players.copy()
+                })
+                print(f"[DEBUG] Side pot {len(pots)}: {pot_amount} chips, eligible players: {[p.name for p in eligible_players]}")
+            
+            # Remove players who are maxed out at this level
+            active_players = [p for p in active_players if contributions[p] > level]
+            prev_level = level
 
         total_pot = sum(pot["amount"] for pot in pots)
         if total_pot != self.pot:
@@ -871,6 +886,9 @@ if __name__ == "__main__":
         state = game._get_state()
         print(f"Current state: {state}")
         # For testing, let's call or check if possible, otherwise fold:
+        if game.current_player_idx is None:
+            print("No current player, ending game")
+            break
         player = game.players[game.current_player_idx]
         to_call = game.current_bet - player.current_bet
         to_call = max(0, to_call)  # Ensure non-negative

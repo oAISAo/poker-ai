@@ -1,6 +1,6 @@
 import os
 import numpy as np
-from typing import Optional
+from typing import Optional, Dict, Union
 from agents.base_rl_agent import BaseRLAgent
 from sb3_contrib import MaskablePPO
 from sb3_contrib.common.wrappers import ActionMasker
@@ -46,11 +46,12 @@ class SharkyAgent(BaseRLAgent):
             seed=42
         )
         
-        self.training_stats = {
+        # Training statistics with proper typing
+        self.training_stats: Dict[str, Union[int, float]] = {
             'total_timesteps': 0,
             'tournaments_played': 0,
-            'average_placement': 0,
-            'win_rate': 0
+            'average_placement': 0.0,
+            'win_rate': 0.0
         }
     
     def act(self, observation, action_mask=None, deterministic=True):
@@ -98,7 +99,7 @@ class SharkyAgent(BaseRLAgent):
         
         # Save training stats
         stats_path = path.replace('.zip', '_stats.npy')
-        np.save(stats_path, self.training_stats)
+        np.save(stats_path, self.training_stats, allow_pickle=True)  # type: ignore
         
         print(f"💾 Sharky {self.version} saved to {path}")
     
@@ -132,7 +133,7 @@ class SharkyAgent(BaseRLAgent):
         )
         
         # Copy the current model weights
-        new_agent.model.set_parameters(self.model.get_parameters())
+        new_agent.model.set_parameters(self.model.get_parameters())  # type: ignore
         new_agent.training_stats = self.training_stats.copy()
         
         return new_agent
@@ -149,8 +150,8 @@ class TournamentCallback(BaseCallback):
     def _on_step(self) -> bool:
         # Log tournament completion
         if self.locals.get('dones', [False])[0]:  # Tournament finished
-            if hasattr(self.training_env.envs[0], 'elimination_order'):
-                env = self.training_env.envs[0]
+            if hasattr(self.training_env, 'envs') and hasattr(self.training_env.envs[0], 'elimination_order'):  # type: ignore
+                env = self.training_env.envs[0]  # type: ignore
                 total_players = env.total_players
                 eliminated = len(env.elimination_order)
                 

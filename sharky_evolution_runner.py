@@ -99,11 +99,17 @@ def train_version(version: str, from_version: Optional[str] = None, timesteps: i
     
     # Train the version
     try:
-        agent = train_sharky_version(
-            version=version,
-            timesteps=timesteps,
-            load_from=load_from
-        )
+        if load_from is not None:
+            agent = train_sharky_version(
+                version=version,
+                timesteps=timesteps,
+                load_from=load_from
+            )
+        else:
+            agent = train_sharky_version(
+                version=version,
+                timesteps=timesteps
+            )
         print(f"✅ Sharky {version} training completed successfully!")
         return True
     except Exception as e:
@@ -147,7 +153,8 @@ def evaluate_version(version: str, num_tournaments: int = 5):
         agent.training_stats['average_placement'] = results['average_placement']
         agent.training_stats['win_rate'] = results['win_rate']
         
-        np.save(get_stats_path(version), agent.training_stats)
+        # Save training stats as numpy file with pickle support
+        np.save(get_stats_path(version), agent.training_stats, allow_pickle=True)  # type: ignore
         print(f"💾 Updated training stats saved")
         
         return True
