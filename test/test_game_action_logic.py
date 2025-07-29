@@ -56,7 +56,7 @@ def test_fold_with_negative_to_call_fails():
 
 def test_fold_with_non_bool_in_hand_fails():
     game, alice, _ = setup_game()
-    alice.in_hand = 1  # Should be bool
+    alice.in_hand = "yes"  # type: ignore # Should be bool, but Python allows it
     game.current_bet = 100
     alice.current_bet = 50
     to_call = game.current_bet - alice.current_bet

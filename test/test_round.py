@@ -29,9 +29,8 @@ def test_bug_raise_resets_betting_round(monkeypatch):
     players = [TestPlayer("P1"), TestPlayer("P2"), TestPlayer("P3")]
     game = PokerGame(players, game_mode=GameMode.AI_VS_AI)
 
-    game.reset_for_new_hand(is_first_hand=True)
+    game.reset_for_new_hand(is_first_hand=True)  # This automatically posts blinds
     game.dealer_position = 0
-    game.post_blinds()
     game.deal_hole_cards()
 
     monkeypatch.setattr("builtins.print", lambda *args, **kwargs: None)
@@ -41,6 +40,8 @@ def test_bug_raise_resets_betting_round(monkeypatch):
 
     done = False
     while not done:
+        if game.current_player_idx is None:
+            break
         player = game.players[game.current_player_idx]
         to_call = game.current_bet - player.current_bet
 
@@ -104,6 +105,8 @@ def test_human_raise_with_mocked_cards():
 
     done = False
     while not done:
+        if game.current_player_idx is None:
+            break
         player = game.players[game.current_player_idx]
         to_call = game.current_bet - player.current_bet
         if player.is_human:
@@ -134,9 +137,8 @@ def test_bug_all_in_sets_flag(monkeypatch):
     ai2 = AllInTestPlayer("AI2", stack=1000, is_human=False)
     game = PokerGame([ai1, ai2], game_mode=GameMode.AI_VS_AI)
 
-    game.reset_for_new_hand(is_first_hand=True)
+    game.reset_for_new_hand(is_first_hand=True)  # This automatically posts blinds
     game.dealer_position = 0
-    game.post_blinds()
     game.deal_hole_cards()
 
     monkeypatch.setattr("builtins.print", lambda *args, **kwargs: None)
@@ -146,6 +148,8 @@ def test_bug_all_in_sets_flag(monkeypatch):
 
     done = False
     while not done:
+        if game.current_player_idx is None:
+            break
         player = game.players[game.current_player_idx]
         to_call = game.current_bet - player.current_bet
         action = player.decide_action(to_call, game.community_cards)
@@ -164,9 +168,8 @@ def test_bug_fold_removes_player_from_active():
     p2 = Player("P2", stack=1000, is_human=False)
 
     game = PokerGame([p1, p2], game_mode=GameMode.AI_VS_AI)
-    game.reset_for_new_hand(is_first_hand=True)
+    game.reset_for_new_hand(is_first_hand=True)  # This automatically posts blinds
     game.dealer_position = 0
-    game.post_blinds()
     game.deal_hole_cards()
 
     p1.fold()

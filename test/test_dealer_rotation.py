@@ -24,7 +24,7 @@ def test_dealer_rotation():
     # Use 4 players for clearer tracking
     env = MultiTableTournamentEnv(total_players=4, max_players_per_table=4, 
                                   starting_stack=1000,  # Higher stacks to avoid eliminations
-                                  blinds_schedule=[(10, 20)])  # Keep blinds constant
+                                  blinds_schedule=[(10, 20, 0)])  # Keep blinds constant
     obs, info = env.reset(seed=12345)
     
     print(f"Players: {[p.name for p in env.all_players]}")
@@ -129,7 +129,7 @@ def test_blind_amounts():
     
     env = MultiTableTournamentEnv(total_players=3, max_players_per_table=3,
                                   starting_stack=1000,
-                                  blinds_schedule=[(5, 10), (10, 20), (25, 50)])
+                                  blinds_schedule=[(5, 10, 0), (10, 20, 0), (25, 50, 1)])
     obs, info = env.reset(seed=42)
     
     table = env.tables[env.active_table_id]
