@@ -25,6 +25,40 @@ class TestStateConsistencyValidation:
         # Normal state should validate
         assert game._validate_state_consistency("normal state test")
     
+    def test_inconsistency_player_bet_exceeds_game_bet_after_blinds(self):
+        """Reproduce and debug player.current_bet > game.current_bet after posting blinds (as seen in Sharky 1.0.1 training)"""
+        players = [Player(f"Player{i}", stack=1000) for i in range(3)]
+        game = PokerGame(players, small_blind=10, big_blind=20)
+        game.reset_for_new_hand(is_first_hand=True)
+
+        # Simulate posting blinds
+        game.players[0].current_bet = 50  # SB posts too much
+        game.players[1].current_bet = 20  # BB normal
+        game.current_bet = 0  # Incorrect game bet (should be max player bet)
+
+        print('[DEBUG] Before fix:', {
+            'player0.current_bet': game.players[0].current_bet,
+            'player1.current_bet': game.players[1].current_bet,
+            'game.current_bet': game.current_bet,
+            'pot': game.pot
+        })
+
+        # Should detect inconsistency
+        assert not game._validate_state_consistency('after posting blinds')
+
+        # Fix the state
+        assert game.fix_state_inconsistencies()
+
+        print('[DEBUG] After fix:', {
+            'player0.current_bet': game.players[0].current_bet,
+            'player1.current_bet': game.players[1].current_bet,
+            'game.current_bet': game.current_bet,
+            'pot': game.pot
+        })
+
+        # State should now be consistent
+        assert game._validate_state_consistency('after fixing blinds inconsistency')
+    
     def test_validate_state_consistency_player_bet_exceeds_game_bet(self):
         """Test detection of player.current_bet > game.current_bet"""
         players = [Player(f"Player{i}", stack=1000) for i in range(3)]
@@ -188,6 +222,57 @@ class TestTournamentStateConsistency:
         
         # Showdown should detect and potentially fix mismatch
         game.showdown()
+    
+    def test_reproduce_sharky_training_state_inconsistency(self):
+        """Reproduce the state inconsistency seen in Sharky 1.0.1 training: player.current_bet > game.current_bet, game.current_bet != max player bet, total player bets != game.pot"""
+        env = MultiTableTournamentEnv(total_players=18, max_players_per_table=9)
+        obs, info = env.reset()
+
+        # Pick a table and player to simulate the inconsistency
+        table = env.tables[env.active_table_id]
+        game = table.game
+        # Simulate posting blinds and new hand setup
+        game.reset_for_new_hand(is_first_hand=True)
+
+        # Artificially set player and game bets to reproduce the warning
+        game.players[1].current_bet = 50  # e.g. TAG_1
+        game.current_bet = 0
+        game.pot = 130  # Arbitrary pot value to mismatch
+
+        total_player_bets = sum(p.current_bet for p in game.players)
+        max_player_bet = max(p.current_bet for p in game.players)
+
+        print('[DEBUG] Before fix:', {
+            'player1.current_bet': game.players[1].current_bet,
+            'game.current_bet': game.current_bet,
+            'max_player_bet': max_player_bet,
+            'total_player_bets': total_player_bets,
+            'game.pot': game.pot
+        })
+
+        # Assert all warning conditions
+        assert game.players[1].current_bet > game.current_bet
+        assert game.current_bet != max_player_bet
+        assert total_player_bets != game.pot
+
+        # Fix the state
+        assert game.fix_state_inconsistencies()
+
+        total_player_bets_after = sum(p.current_bet for p in game.players)
+        max_player_bet_after = max(p.current_bet for p in game.players)
+
+        print('[DEBUG] After fix:', {
+            'player1.current_bet': game.players[1].current_bet,
+            'game.current_bet': game.current_bet,
+            'max_player_bet': max_player_bet_after,
+            'total_player_bets': total_player_bets_after,
+            'game.pot': game.pot
+        })
+
+        # Assert state is now consistent
+        assert game.players[1].current_bet <= game.current_bet
+        assert game.current_bet == max_player_bet_after
+        assert total_player_bets_after == game.pot
 
 class TestAdvancedStateScenarios:
     """Test complex state scenarios"""
@@ -247,6 +332,35 @@ class TestAdvancedStateScenarios:
             player.current_bet = 50
         
         assert game._validate_state_consistency("all equal bets")
+    
+    def test_table_balancing_consistency(self):
+        """Simulate a multi-table tournament with eliminations and table balancing, checking for state consistency after each balancing event."""
+        env = MultiTableTournamentEnv(total_players=18, max_players_per_table=9)
+        obs, info = env.reset()
+
+        # Simulate eliminations to trigger table balancing
+        # We'll manually eliminate players from table 0
+        table0 = env.tables[0]
+        eliminated = 0
+        for player in list(table0.players):
+            if eliminated < 5:  # Eliminate 5 players to force balancing
+                player.stack = 0
+                player.in_hand = False
+                eliminated += 1
+
+        # Trigger table balancing (simulate tournament step)
+        env.balance_table(0)
+
+        # [DEBUG] Print state after balancing
+        for tid, table in env.tables.items():
+            print(f'[DEBUG] Table {tid} after balancing:')
+            for player in table.players:
+                print(f'    {player.name}.current_bet = {player.current_bet}, stack = {player.stack}, in_hand = {player.in_hand}')
+            print(f'    table.game.current_bet = {table.game.current_bet}')
+            print(f'    table.game.pot = {table.game.pot}')
+
+            # Assert state consistency for each table
+            assert table.game._validate_state_consistency(f'table {tid} after balancing')
 
 if __name__ == "__main__":
     pytest.main(["-v", __file__])

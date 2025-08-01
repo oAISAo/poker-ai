@@ -6,7 +6,6 @@ from engine.player import Player
 from engine.hand_evaluator import hand_rank
 from utils.enums import GameMode
 from engine.action_validation import validate_raise, validate_call, validate_check, validate_fold, ActionValidationError
-
 class PokerGame:
     PHASES = ["preflop", "flop", "turn", "river", "showdown"]
 
@@ -67,6 +66,13 @@ class PokerGame:
 
         self.players_who_posted_blinds = set()
         self.post_blinds()
+
+        # [DEBUG] Print all player bets, current_bet, and pot after hand setup
+        print('[DEBUG] After hand setup:')
+        for player in self.players:
+            print(f"    {player.name}.current_bet = {player.current_bet}")
+        print(f"    self.current_bet = {self.current_bet}")
+        print(f"    self.pot = {self.pot}")
 
         # --- Mark all-in and eliminated states after blinds ---
         for player in self.players:
@@ -189,6 +195,13 @@ class PokerGame:
 
         self.players_who_posted_blinds = {sb_player.name, bb_player.name}
 
+        # [DEBUG] Print all player bets, current_bet, and pot after posting blinds
+        print('[DEBUG] After posting blinds:')
+        for player in self.players:
+            print(f"    {player.name}.current_bet = {player.current_bet}")
+        print(f"    self.current_bet = {self.current_bet}")
+        print(f"    self.pot = {self.pot}")
+
     def deal_hole_cards(self):
         if self.deck is None:
             raise RuntimeError("Deck is not initialized. Call reset_for_new_hand() first.")
@@ -277,10 +290,14 @@ class PokerGame:
         # Fix 2: After fixing individual players, synchronize game.current_bet if needed
         # (This handles cases where game.current_bet is lower than it should be)
         self._synchronize_current_bet()
-        
+
+        # Fix 3: Ensure pot matches sum of all player bets
+        self.pot = sum(p.current_bet for p in self.players)
+        print(f"[DEBUG] Synchronized pot to sum of player bets: {self.pot}")
+
         if fixed_players:
             print(f"[DEBUG] Fixed bet inconsistencies for players: {fixed_players}")
-        
+
         # Validate the fixes worked
         if self._validate_state_consistency("after fix_state_inconsistencies"):
             print(f"[DEBUG] State inconsistencies successfully resolved")
@@ -890,7 +907,7 @@ if __name__ == "__main__":
             print("No current player, ending game")
             break
         player = game.players[game.current_player_idx]
-        to_call = game.current_bet - player.current_bet
+        to_call = game.current_bet - player.current_bet  # type: ignore[attr-defined]
         to_call = max(0, to_call)  # Ensure non-negative
         if to_call > 0:
             action = "call"

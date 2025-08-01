@@ -14,6 +14,7 @@ original_print = builtins.print
 from env.rule_based_tournament_env import create_rule_based_training_env
 from env.multi_table_tournament_env import MultiTableTournamentEnv
 import numpy as np
+import random
 
 # Restore print functionality for our tests
 builtins.print = original_print
@@ -25,7 +26,7 @@ def test_basic_tournament_progression():
     # Use smaller starting stacks and higher blinds for faster eliminations
     env = MultiTableTournamentEnv(total_players=6, max_players_per_table=6, 
                                   starting_stack=200,  # Much smaller stack
-                                  blinds_schedule=[(10, 20), (20, 40), (50, 100), (100, 200)])  # More aggressive
+                                  blinds_schedule=[(10, 20, 0), (20, 40, 0), (50, 100, 1), (100, 200, 1)])  # More aggressive
     obs, info = env.reset(seed=12345)
     
     print(f"Initial: {len([p for p in env.all_players if p.stack > 0])} players with stacks")
@@ -53,7 +54,6 @@ def test_basic_tournament_progression():
                 elif a == 2:  # raise
                     weights.append(2)
             
-            import random
             action = random.choices(legal_actions, weights=weights)[0]
         obs, reward, done, truncated, info = env.step(action)
         
@@ -107,7 +107,8 @@ def test_rule_based_tournament_progression():
             print(f"Step {step}: {remaining} remaining, {eliminated} eliminated")
             current_table = env.tables.get(env.active_table_id)
             if current_table:
-                current_player = current_table.players[current_table.game.current_player_idx] if current_table.players else None
+                idx = current_table.game.current_player_idx
+                current_player = current_table.players[idx] if current_table.players and idx is not None and 0 <= idx < len(current_table.players) else None
                 print(f"  Current player: {current_player.name if current_player else 'None'}")
             
         if done or truncated:
@@ -166,7 +167,9 @@ def test_game_step_functionality():
     
     print(f"Current player index: {game.current_player_idx}")
     print(f"Total players at table: {len(table.players)}")
-    print(f"Current player: {table.players[game.current_player_idx].name}")
+    idx = game.current_player_idx
+    current_player_name = table.players[idx].name if idx is not None and 0 <= idx < len(table.players) else 'INVALID'
+    print(f"Current player: {current_player_name}")
     print(f"Current bet: {game.current_bet}")
     print(f"Pot: {game.pot}")
     print(f"Hand over: {game.hand_over}")
@@ -191,7 +194,9 @@ def test_game_step_functionality():
         
         print(f"Stack changes: {stack_changes}")
         print(f"Reward: {reward}")
-        print(f"New current player: {table.players[game.current_player_idx].name if game.current_player_idx < len(table.players) else 'INVALID'}")
+        idx = game.current_player_idx
+        new_current_player = table.players[idx].name if idx is not None and 0 <= idx < len(table.players) else 'INVALID'
+        print(f"New current player: {new_current_player}")
         print(f"Hand over: {game.hand_over}")
         
         # Validate that step completed successfully

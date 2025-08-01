@@ -46,8 +46,8 @@ class SharkyAgent(BaseRLAgent):
             seed=42
         )
         
-        # Training statistics with proper typing
-        self.training_stats: Dict[str, Union[int, float]] = {
+        # Training statistics with proper typing (allow str values for metadata)
+        self.training_stats: Dict[str, Union[int, float, str]] = {
             'total_timesteps': 0,
             'tournaments_played': 0,
             'average_placement': 0.0,
@@ -84,7 +84,7 @@ class SharkyAgent(BaseRLAgent):
             progress_bar=True
         )
         
-        self.training_stats['total_timesteps'] += total_timesteps
+        self.training_stats['total_timesteps'] = int(self.training_stats.get('total_timesteps', 0)) + total_timesteps
         print(f"✅ Sharky {self.version} training completed!")
         
         return self.model

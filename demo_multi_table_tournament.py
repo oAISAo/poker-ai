@@ -138,7 +138,7 @@ def demonstrate_table_balancing():
         player.stack = 0
     
     # Trigger balancing check
-    env._check_table_balancing()
+    env.balance_table()
     
     print("After table balancing:")
     for table_id, table in env.tables.items():

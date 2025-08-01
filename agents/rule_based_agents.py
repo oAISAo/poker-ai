@@ -307,7 +307,7 @@ def get_mixed_opponent_pool(env, total_opponents: int = 17) -> List[BaseAgent]:
     - 4 Rock bots (tight-passive)
     - 5 Fish bots (loose-passive) - most common type
     """
-    agents = []
+    agents: List[BaseAgent] = []
     
     # Add TAG bots
     for i in range(4):

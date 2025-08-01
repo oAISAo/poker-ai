@@ -11,6 +11,7 @@ import numpy as np
 from typing import Dict, List, Optional
 # Create vectorized environment (set very high episode limit for tournaments)
 from gymnasium.wrappers import TimeLimit
+import argparse
 
 # Add project root to path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -154,8 +155,8 @@ def train_sharky_vs_rule_based(
     }
     
     # Save training stats
-    stats_path = f"models/sharky_evolution/sharky_{version}_stats.npy"
-    np.save(stats_path, agent.training_stats)
+    stats_path = f"models/sharky_evolution/sharky_{version}_stats.npz"
+    np.savez(stats_path, **agent.training_stats)
     
     # Restore original print function
     builtins.print = original_print
@@ -165,7 +166,7 @@ def train_sharky_vs_rule_based(
     return agent
 
 
-def evaluate_vs_rule_based(agent: SharkyAgent, num_tournaments: int = 5) -> Dict[str, float]:
+def evaluate_vs_rule_based(agent: SharkyAgent, num_tournaments: int = 5) -> Dict[str, object]:
     """
     Evaluate agent against rule-based opponents
     """
@@ -226,7 +227,6 @@ def evaluate_vs_rule_based(agent: SharkyAgent, num_tournaments: int = 5) -> Dict
 
 
 if __name__ == "__main__":
-    import argparse
     
     parser = argparse.ArgumentParser(description='Train Sharky vs Rule-Based Opponents')
     parser.add_argument('version', help='Version to train (e.g., 1.0.1)')

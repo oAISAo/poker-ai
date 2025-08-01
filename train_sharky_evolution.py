@@ -18,7 +18,7 @@ import argparse
 import numpy as np
 import time
 from datetime import datetime
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 # Environment and agent imports
 from env.multi_table_tournament_env import MultiTableTournamentEnv
@@ -44,7 +44,7 @@ def create_training_environment(total_players=18, hands_per_level=25):
     return env
 
 def train_sharky_version(version: str, timesteps: int = 50000, 
-                        load_from: str = None) -> SharkyAgent:
+                        load_from: Optional[str] = None) -> SharkyAgent:
     """Train a single Sharky version"""
     print(f"\n🦈 === Training Sharky {version} ===")
     print(f"Timesteps: {timesteps:,}")
@@ -80,7 +80,7 @@ def train_sharky_version(version: str, timesteps: int = 50000,
     
     return agent
 
-def evaluate_agent_tournament(agent: SharkyAgent, num_tournaments: int = 5) -> Dict[str, float]:
+def evaluate_agent_tournament(agent: SharkyAgent, num_tournaments: int = 5) -> Dict[str, object]:
     """Evaluate an agent's performance in tournaments"""
     print(f"\n🏆 Evaluating {agent.get_name()} over {num_tournaments} tournaments...")
     
@@ -91,7 +91,7 @@ def evaluate_agent_tournament(agent: SharkyAgent, num_tournaments: int = 5) -> D
     for tournament_num in range(num_tournaments):
         obs, info = env.reset()
         done = False
-        tournament_reward = 0
+        tournament_reward = 0.0
         steps = 0
         max_steps = 5000  # Prevent infinite loops
         
@@ -104,15 +104,21 @@ def evaluate_agent_tournament(agent: SharkyAgent, num_tournaments: int = 5) -> D
             
             # Step environment
             obs, reward, done, truncated, info = env.step(action)
-            tournament_reward += reward
+            # Ensure reward is castable to float, else use 0.0
+            try:
+                tournament_reward += float(reward)
+            except (TypeError, ValueError):
+                tournament_reward += 0.0
             steps += 1
             
             if truncated:
                 break
         
         # Calculate placement
-        remaining_players = len([p for p in env.unwrapped.all_players if p.stack > 0])
-        eliminated_players = len(env.unwrapped.elimination_order)
+        all_players = getattr(env.unwrapped, "all_players", [])
+        elimination_order = getattr(env.unwrapped, "elimination_order", [])
+        remaining_players = len([p for p in all_players if p.stack > 0])
+        eliminated_players = len(elimination_order)
         
         if remaining_players == 1:
             # Find if our agent won (simplified - assumes single agent evaluation)
@@ -143,6 +149,15 @@ def evaluate_agent_tournament(agent: SharkyAgent, num_tournaments: int = 5) -> D
     return stats
 
 def run_multi_agent_tournament(agents: List[SharkyAgent], num_tournaments: int = 3) -> Dict[str, Any]:
+    def safe_float(val) -> float:
+        if isinstance(val, (float, int)):
+            return float(val)
+        if isinstance(val, str):
+            try:
+                return float(val)
+            except ValueError:
+                return 0.0
+        return 0.0
     """Run tournaments with multiple Sharky versions competing"""
     print(f"\n🏟️  === Multi-Agent Tournament ===")
     print(f"Agents: {[agent.get_name() for agent in agents]}")
@@ -158,7 +173,7 @@ def run_multi_agent_tournament(agents: List[SharkyAgent], num_tournaments: int =
         results[agent.get_name()] = stats
     
     # Find best performer
-    best_agent = min(agents, key=lambda a: results[a.get_name()]['average_placement'])
+    best_agent = min(agents, key=lambda a: safe_float(results[a.get_name()]['average_placement']))
     
     print(f"\n🏆 Tournament Results Summary:")
     for agent_name, stats in results.items():
@@ -231,7 +246,7 @@ def main():
             os.makedirs(results_dir, exist_ok=True)
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             results_path = os.path.join(results_dir, f"tournament_{args.generation}_{timestamp}.npy")
-            np.save(results_path, tournament_results)
+            np.savez(results_path, **tournament_results)
             print(f"💾 Results saved: {results_path}")
         else:
             print("❌ No agents found for tournament")

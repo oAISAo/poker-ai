@@ -41,7 +41,7 @@ def test_forced_inconsistency_detection_in_tournament():
     print(f"[DEBUG] Eliminated {eliminated_player.name} from table {table_ids[0]}")
 
     # Trigger table balancing
-    env._check_table_balancing()
+    env.balance_table(table_ids[0])
     print(f"[DEBUG] Table balancing triggered")
 
     # Deliberately introduce an inconsistency: set a player's bet higher than game.current_bet
@@ -80,7 +80,7 @@ def test_blind_level_change_and_table_balancing():
             print(f"[DEBUG] Eliminated {eliminated_player.name}")
 
         # Trigger table balancing
-        env._check_table_balancing()
+        env.balance_table(env.active_table_id)
         print(f"[DEBUG] Table balancing triggered")
 
         # Check state consistency after each event
@@ -138,7 +138,7 @@ def test_table_balancing_consistency():
     print(f"[DEBUG] Eliminated {eliminated_player.name} from table {table_ids[0]}")
 
     # Trigger table balancing
-    env._check_table_balancing()
+    env.balance_table(table_ids[0])
     print(f"[DEBUG] Table balancing triggered")
 
     # Check for duplicate blind posting and bet inconsistencies
@@ -158,7 +158,6 @@ def test_blind_level_change_and_elimination():
     Ensures state consistency after blind changes and bust-outs
     """
     print("\n=== Test 6: Blind Level Change and Elimination ===")
-    from env.multi_table_tournament_env import MultiTableTournamentEnv
 
     # Create a turbo tournament with increasing blinds
     env = MultiTableTournamentEnv(total_players=6, max_players_per_table=6, blinds_schedule=[(10, 20, 0), (20, 40, 1), (40, 80, 1)])

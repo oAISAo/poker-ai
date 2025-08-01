@@ -107,7 +107,7 @@ def main():
 
     # Agent selection
     if args.agent == "sharky":
-        agent = SharkyAgent(env, use_maskable_ppo=True)
+        agent = SharkyAgent(env)
         if args.load_model:
             agent.model = MaskablePPO.load(args.load_model, env=env)
             logger.info(f"Loaded model from {args.load_model}")

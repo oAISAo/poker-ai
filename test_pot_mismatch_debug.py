@@ -7,6 +7,7 @@ This will help us find the specific issues with side pot logic.
 
 from engine.game import PokerGame
 from engine.player import Player
+import traceback
 
 def test_side_pot_scenario_1():
     """Test basic side pot scenario with all-in player"""
@@ -145,5 +146,4 @@ if __name__ == "__main__":
         
     except Exception as e:
         print(f"Error during testing: {e}")
-        import traceback
         traceback.print_exc()

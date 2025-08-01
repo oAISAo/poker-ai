@@ -1,3 +1,4 @@
+import env
 import pytest
 import numpy as np
 from env.multi_table_tournament_env import MultiTableTournamentEnv, Table
@@ -161,7 +162,7 @@ def test_table_balancing_trigger():
         player.stack = 0
     
     # Check balancing mechanism
-    env._check_table_balancing()
+    env.balance_table(env.active_table_id)
     
     # After balancing, tables should be more balanced
     active_tables = env._get_active_tables()
@@ -395,34 +396,7 @@ def test_simultaneous_all_in_eliminations():
     for player in players_to_eliminate:
         assert player in env.elimination_order
 
-def test_table_breaking_edge_cases():
-    """Test edge cases in table breaking logic"""
-    env = MultiTableTournamentEnv(total_players=18, max_players_per_table=9)
-    obs, info = env.reset()
-    
-    # Eliminate players to force table breaking
-    table_0 = env.tables[0]
-    # Leave only 1 player at table 0
-    remaining_player = table_0.players[0]  # Store reference BEFORE elimination
-    players_to_eliminate = table_0.players[1:]
-    for player in players_to_eliminate:
-        player.stack = 0
-    
-    # Force table balancing
-    env._check_table_balancing()
-    
-    # Table 0 should be broken (inactive)
-    assert not table_0.is_active
-    
-    # Remaining player should be moved to another table
-    found_player = False
-    for table_id, table in env.tables.items():
-        if table_id != 0 and table.is_active:
-            if remaining_player in table.players:
-                found_player = True
-                break
-    
-    assert found_player, "Player should have been moved to active table"
+# Tests for balance_table functionality
 
 def test_invalid_actions_and_error_handling():
     """Test invalid actions and error handling"""
@@ -469,8 +443,8 @@ def test_player_movement_preserves_integrity():
     
     # Force table balancing multiple times
     for _ in range(3):
-        env._check_table_balancing()
-    
+        env.balance_table(env.active_table_id)
+
     # Collect all players from all tables
     final_player_names = set()
     for table in env.tables.values():
@@ -625,6 +599,138 @@ def test_rapid_elimination_scenario():
     players_to_eliminate = env.all_players[:15]  # Leave only 3 players
 
 # ====== TESTS FOR RECENTLY FIXED ISSUES ======
+def test_balance_table_even_distribution():
+    """Test that balance_table evenly distributes players across tables after eliminations."""
+    env = MultiTableTournamentEnv(total_players=18, max_players_per_table=9)
+    obs, info = env.reset()
+
+    # Eliminate players from one table to create imbalance
+    target_table = env.tables[0]
+    for player in target_table.players[6:]:
+        player.stack = 0
+
+    for table in env.tables.values():
+        table.game.hand_over = True
+
+    env.balance_table(env.active_table_id)
+
+    # After balancing, tables should differ by at most 1 player
+    active_tables = env._get_active_tables()
+    player_counts = [t.get_active_player_count() for t in active_tables]
+    assert max(player_counts) - min(player_counts) <= 1, f"Player counts not balanced: {player_counts}"
+    print(f"[DEBUG] test_balance_table_even_distribution: player counts after balancing: {player_counts}")
+
+def test_balance_table_no_movement_during_hand():
+    """Test that balance_table does not move players during a hand."""
+    env = MultiTableTournamentEnv(total_players=18, max_players_per_table=9)
+    obs, info = env.reset()
+    
+    # Eliminate players from one table to create imbalance (so balancing is needed)
+    target_table = env.tables[0]
+    for player in target_table.players[6:]:
+        player.stack = 0
+    
+    # Simulate a hand in progress on all tables
+    for table in env.tables.values():
+        table.game.hand_over = False
+    
+    captured_output = io.StringIO()
+    sys_stdout = sys.stdout
+    sys.stdout = captured_output
+    env.balance_table(env.active_table_id)
+    sys.stdout = sys_stdout
+    output = captured_output.getvalue()
+    assert "is still in a hand; skipping balancing" in output, f"Should skip balancing during hand. Output was: {output.strip()}"
+    print(f"[DEBUG] test_balance_table_no_movement_during_hand: output: {output.strip()}")
+
+def test_balance_table_preserves_player_integrity():
+    """Test that balance_table does not duplicate or lose players."""
+    env = MultiTableTournamentEnv(total_players=27, max_players_per_table=9)
+    obs, info = env.reset()
+
+    initial_player_names = set(p.name for p in env.all_players)
+    env.balance_table(env.active_table_id)
+    final_player_names = set()
+    for table in env.tables.values():
+        for player in table.players:
+            final_player_names.add(player.name)
+    assert initial_player_names == final_player_names, "Player set changed after balancing"
+    print(f"[DEBUG] test_balance_table_preserves_player_integrity: player names preserved")
+    """Test that rebalancing occurs after a hand at any table, not all tables."""
+    env = MultiTableTournamentEnv(total_players=18, max_players_per_table=9)
+    obs, info = env.reset()
+
+    # Eliminate players from table 0 to create imbalance
+    target_table = env.tables[0]
+    for player in target_table.players[6:]:
+        player.stack = 0
+
+    # Simulate hand finished at table 0
+    target_table.game.hand_over = True
+
+    env.balance_table(0)
+
+    # After balancing, tables should differ by at most 1 player
+    active_tables = env._get_active_tables()
+    player_counts = [t.get_active_player_count() for t in active_tables]
+    assert max(player_counts) - min(player_counts) <= 1, f"Player counts not balanced: {player_counts}"
+    print(f"[DEBUG] test_rebalance_after_hand: player counts after balancing: {player_counts}")
+
+def test_table_breaking_moves_players_immediately():
+    """Test that table breaking moves all players immediately after hand is finished."""
+    env = MultiTableTournamentEnv(total_players=10, max_players_per_table=9, min_players_per_table=4)
+    obs, info = env.reset()
+
+    # Eliminate players from table 0 to trigger breaking
+    target_table = env.tables[0]
+    for player in target_table.players[4:]:
+        player.stack = 0
+
+    # Simulate hand finished at table 0
+    target_table.game.hand_over = True
+
+    env.balance_table(0)
+
+    # Table 0 should be deactivated and all players moved
+    assert not target_table.is_active, "Table should be deactivated after breaking"
+    moved_names = [p.name for t in env.tables.values() for p in t.players]
+    for player in target_table.players:
+        if player.stack > 0:
+            assert player.name in moved_names, f"Player {player.name} not found after table breaking"
+    print(f"[DEBUG] test_table_breaking_moves_players_immediately: table 0 deactivated, players moved")
+
+def test_moved_players_join_current_hand():
+    """Test that moved players join the current hand at the new table."""
+    env = MultiTableTournamentEnv(total_players=10, max_players_per_table=9)
+    obs, info = env.reset()
+
+    # Eliminate players from table 0 to trigger breaking
+    target_table = env.tables[0]
+    for player in target_table.players[4:]:
+        player.stack = 0
+
+    # Simulate hand finished at table 0
+    target_table.game.hand_over = True
+
+    env.balance_table(env.active_table_id)
+
+    # All moved players should have in_hand = True at their new table
+    for table in env.tables.values():
+        for player in table.players:
+            assert player.in_hand is True, f"Player {player.name} not in hand after moving"
+    print(f"[DEBUG] test_moved_players_join_current_hand: all moved players joined current hand")
+    """Test that balance_table does not duplicate or lose players."""
+    env = MultiTableTournamentEnv(total_players=27, max_players_per_table=9)
+    obs, info = env.reset()
+
+    initial_player_names = set(p.name for p in env.all_players)
+    env.balance_table(env.active_table_id)
+    final_player_names = set()
+    for table in env.tables.values():
+        for player in table.players:
+            final_player_names.add(player.name)
+    assert initial_player_names == final_player_names, "Player set changed after balancing"
+    print(f"[DEBUG] test_balance_table_preserves_player_integrity: player names preserved")
 
 def test_sharky_stack_tracking_accuracy():
     """Test that Sharky's stack is accurately tracked and reported after eliminations"""
@@ -715,8 +821,8 @@ def test_elimination_message_spam_prevention():
     with redirect_stdout(captured_output):
         # Call table balancing multiple times (this used to cause spam)
         for _ in range(5):
-            env._check_table_balancing()
-    
+            env.balance_table(env.active_table_id)
+
     output = captured_output.getvalue()
     debug_lines = [line for line in output.split('\n') if '[DEBUG]' in line and 'Removed' in line]
     
@@ -798,7 +904,7 @@ def test_debug_message_prefixes():
     
     captured_output = io.StringIO()
     with redirect_stdout(captured_output):
-        env._check_table_balancing()
+        env.balance_table(env.active_table_id)
     
     output = captured_output.getvalue()
     
@@ -869,7 +975,7 @@ def test_player_reference_consistency():
     sharky_initial.stack = 2000
     
     # Force table balancing operations
-    env._check_table_balancing()
+    env.balance_table(env.active_table_id)
     
     # Find Sharky again after operations
     sharky_after = None
@@ -939,7 +1045,7 @@ def test_heads_up_capability():
     assert active_count == 2, f"Expected 2 active players, got {active_count}"
     
     # Check table balancing doesn't break 2-player table
-    env._check_table_balancing()
+    env.balance_table(env.active_table_id)
     assert table.is_active, "Heads-up table should remain active"
     assert table.get_active_player_count() == 2, "Should still have 2 players after balancing"
 
@@ -987,7 +1093,10 @@ def test_rapid_elimination_scenario_completion():
         player.stack = 0
     
     env._update_elimination_order()
-    env._check_table_balancing()
+    # Ensure the game engine ends the hand if only one player remains after eliminations
+    for table in env.tables.values():
+        env._fix_game_state_after_eliminations(table)
+    env.balance_table(env.active_table_id)
     
     # Should handle rapid eliminations gracefully
     active_tables = env._get_active_tables()
@@ -1066,7 +1175,7 @@ def test_robust_state_tracking_across_operations():
     target_player.stack = 1337  # Unique value for tracking
     
     # Perform operations that might affect state tracking
-    env._check_table_balancing()
+    env.balance_table(env.active_table_id)
     env._update_elimination_order()
     
     # Player should still be trackable with correct stack

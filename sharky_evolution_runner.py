@@ -119,6 +119,15 @@ def train_version(version: str, from_version: Optional[str] = None, timesteps: i
 
 def evaluate_version(version: str, num_tournaments: int = 5):
     """Evaluate a specific Sharky version"""
+    def safe_float(val) -> float:
+        if isinstance(val, (float, int)):
+            return float(val)
+        if isinstance(val, str):
+            try:
+                return float(val)
+            except ValueError:
+                return 0.0
+        return 0.0
     print(f"🏆 === Evaluating Sharky {version} ===")
     
     model_path = get_model_path(version)
@@ -150,8 +159,8 @@ def evaluate_version(version: str, num_tournaments: int = 5):
         
         # Update and save training stats
         agent.training_stats['tournaments_played'] = num_tournaments
-        agent.training_stats['average_placement'] = results['average_placement']
-        agent.training_stats['win_rate'] = results['win_rate']
+        agent.training_stats['average_placement'] = safe_float(results['average_placement'])
+        agent.training_stats['win_rate'] = safe_float(results['win_rate'])
         
         # Save training stats as numpy file with pickle support
         np.save(get_stats_path(version), agent.training_stats, allow_pickle=True)  # type: ignore

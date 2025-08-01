@@ -3,7 +3,16 @@
 from engine.cards import Card
 
 class Player:
-    def __init__(self, name, stack=1000, is_human=False):
+    name: str
+    stack: int
+    hole_cards: list
+    current_bet: int
+    in_hand: bool
+    is_human: bool
+    all_in: bool
+    total_contributed: int
+
+    def __init__(self, name: str, stack: int = 1000, is_human: bool = False):
         self.name = name
         self.stack = stack
         self.hole_cards = []  # list of Card objects

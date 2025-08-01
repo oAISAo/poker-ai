@@ -32,7 +32,7 @@ def main():
 
     # Agent selection
     if args.agent == "sharky":
-        agent = SharkyAgent(env, use_maskable_ppo=True)
+        agent = SharkyAgent(env)
         if args.load_model:
             agent.model = MaskablePPO.load(args.load_model, env=env)
             logger.info(f"Loaded model from {args.load_model}")
@@ -57,15 +57,19 @@ def main():
     for ep in range(args.eval_episodes):
         obs, info = env.reset()
         done = False
-        ep_reward = 0
+        ep_reward = 0.0
         while not done:
-            current_player_idx = env.unwrapped.current_player_idx
-            player = env.unwrapped.players[current_player_idx]
-            obs_for_player = env.unwrapped.get_obs_for_player(player)
+            current_player_idx = getattr(env.unwrapped, "current_player_idx", None)
+            players = getattr(env.unwrapped, "players", None)
+            get_obs_for_player = getattr(env.unwrapped, "get_obs_for_player", None)
+            if current_player_idx is None or players is None or get_obs_for_player is None:
+                raise AttributeError("Environment missing required attributes for evaluation.")
+            player = players[current_player_idx]
+            obs_for_player = get_obs_for_player(player)
             action = agent.act(obs_for_player)
             obs, reward, terminated, truncated, info = env.step(action)
             done = terminated or truncated
-            ep_reward += reward
+            ep_reward += float(reward)
             if done:
                 break
         logger.info(f"Episode {ep+1}: Reward = {ep_reward}")

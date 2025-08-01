@@ -1,5 +1,5 @@
 # filepath: setup.py
-from setuptools import setup, find_packages
+from setuptools import setup, find_packages # type: ignore
 
 setup(
     name='poker-ai',  # Replace with your project's name

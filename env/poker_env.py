@@ -30,7 +30,8 @@ class PokerEnv(gym.Env):
         self.current_player_idx = 0
 
     def legal_action_mask(self):
-        player = self.players[self.game.current_player_idx]
+        idx = self.game.current_player_idx or 0
+        player = self.players[idx]
         to_call = self.game.current_bet - player.current_bet
         # [fold, call/check, raise]
         mask = [to_call > 0, True, True]
@@ -47,7 +48,8 @@ class PokerEnv(gym.Env):
         return obs
 
     def step(self, action):
-        player = self.players[self.game.current_player_idx]
+        idx = self.game.current_player_idx or 0
+        player = self.players[idx]
         to_call = self.game.current_bet - player.current_bet
 
         # Map discrete action to poker action
@@ -96,7 +98,8 @@ class PokerEnv(gym.Env):
             print(f"{p.name}: stack={p.stack}, bet={p.current_bet}, in_hand={p.in_hand}")
 
     def _get_obs(self):
-        player = self.players[self.game.current_player_idx]
+        idx = self.game.current_player_idx or 0
+        player = self.players[idx]
         obs = np.array([
             player.stack,
             self.game.current_bet - player.current_bet,
@@ -105,8 +108,3 @@ class PokerEnv(gym.Env):
             int(player.in_hand)
         ], dtype=np.float32)
         return obs
-
-    def _get_reward(self, player):
-        # Example: reward is change in stack (customize for your RL setup)
-        # You may want to track previous stack for each player
-        return 0.0  # Placeholder
