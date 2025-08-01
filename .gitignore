@@ -12,6 +12,7 @@ env/
 # IDE/editor config files
 .vscode/
 .idea/
+.github/
 *.sublime-project
 *.sublime-workspace
 
