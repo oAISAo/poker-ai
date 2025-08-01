@@ -171,6 +171,7 @@ def test_hand_ends_when_all_in_and_folded_mix():
     # Alice is all-in and should not act
     assert not alice.in_hand or getattr(alice, "all_in", False)
     # Only Bob and Carol should be able to act
+    assert game.current_player_idx is not None
     current_player = game.players[game.current_player_idx]
     assert current_player.name in ["Bob", "Carol"]
     # Simulate Bob folding if facing a bet, otherwise check
@@ -877,6 +878,7 @@ def test_single_remaining_player_wins():
     game = PokerGame([alice, bob])
     game.reset_for_new_hand(is_first_hand=True)
     current_idx = game.current_player_idx
+    assert current_idx is not None
     acting_player = game.players[current_idx]
     # If to_call == 0, must check, not fold
     to_call = game.current_bet - acting_player.current_bet
@@ -887,6 +889,7 @@ def test_single_remaining_player_wins():
     if not game.hand_over:
         # Next player must act
         next_idx = (current_idx + 1) % 2
+        assert next_idx is not None
         next_player = game.players[next_idx]
         to_call = game.current_bet - next_player.current_bet
         if to_call == 0:

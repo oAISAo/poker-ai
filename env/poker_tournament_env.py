@@ -1,10 +1,11 @@
 import gymnasium as gym
 import numpy as np
+from typing import List, Optional, Tuple
 from engine.player import Player
 from engine.game import PokerGame
 from engine.action_validation import validate_raise
 import builtins
-builtins.print = lambda *args, **kwargs: None
+# builtins.print = lambda *args, **kwargs: None
 
 class PokerTournamentEnv(gym.Env):
     """
@@ -12,14 +13,12 @@ class PokerTournamentEnv(gym.Env):
     Plays until one player remains. Blinds increase on a schedule.
     Rewards are based on placement.
     """
-    def __init__(self, num_players=9, starting_stack=1000, blinds_schedule=None, hands_per_level=25):
+    def __init__(self, num_players: int = 9, starting_stack: int = 1000, blinds_schedule: Optional[List[Tuple[int, int, int]]] = None, hands_per_level: int = 25):
         super().__init__()
-        self.num_players = num_players
-        self.starting_stack = starting_stack
-        self.hands_per_level = hands_per_level
-        
-        # Professional tournament blind structure with antes starting level 3
-        self.blinds_schedule = blinds_schedule or [
+        self.num_players: int = num_players
+        self.starting_stack: int = starting_stack
+        self.hands_per_level: int = hands_per_level
+        self.blinds_schedule: List[Tuple[int, int, int]] = blinds_schedule or [
             (10, 20, 0),     # Level 1 - no ante
             (15, 30, 0),     # Level 2 - no ante  
             (25, 50, 1),     # Level 3 - antes begin (total ante = BB)
@@ -33,37 +32,24 @@ class PokerTournamentEnv(gym.Env):
             (750, 1500, 1),  # Level 11 - antes continue
             (1000, 2000, 1), # Level 12 - antes continue
         ]
-        
-        # Validate and normalize blind schedule
         self._validate_blind_schedule()
-        
-        self.current_blind_level = 0
-        self.hands_played = 0
-        self.dealer_position = 0  # Track dealer position across resets
-
-        self.players = []
-        self.elimination_order = []
+        self.current_blind_level: int = 0
+        self.hands_played: int = 0
+        self.dealer_position: int = 0  # Track dealer position across resets
+        self.players: List[Player] = []
+        self.elimination_order: List[Player] = []
         self._setup_players()
-        # --- FIX: Initialize PokerGame here ---
         from engine.game import PokerGame
-        # Initialize with current blind level for ante support
         blind_level = self.blinds_schedule[self.current_blind_level]
-        if len(blind_level) == 2:
-            sb, bb = blind_level
-            ante = 0
-        else:
-            sb, bb, ante = blind_level
-        self.game = PokerGame(self.players, starting_stack=self.starting_stack, 
+        sb, bb, ante = blind_level
+        self.game: PokerGame = PokerGame(self.players, starting_stack=self.starting_stack, 
                              small_blind=sb, big_blind=bb, ante=ante)
         self._setup_game()
-
-        # Observation: [player_stack, to_call, pot, current_bet, is_in_hand]
         self.observation_space = gym.spaces.Box(
             low=0, high=1e6, shape=(5,), dtype=np.float32
         )
         self.action_space = gym.spaces.Discrete(3)  # fold, call/check, raise
-
-        self.prev_stacks = {}
+        self.prev_stacks: dict[str, int] = {}
 
     def _validate_blind_schedule(self):
         """Validate and normalize blind schedule to enforce consistent ante logic"""
@@ -93,12 +79,7 @@ class PokerTournamentEnv(gym.Env):
 
     def _setup_game(self):
         blind_level = self.blinds_schedule[self.current_blind_level]
-        if len(blind_level) == 2:
-            sb, bb = blind_level
-            ante = 0
-        else:
-            sb, bb, ante = blind_level
-            
+        sb, bb, ante = blind_level
         # Set dealer position before rotating
         self.game.dealer_position = self.dealer_position
         # Rotate dealer before starting a new hand
@@ -128,11 +109,7 @@ class PokerTournamentEnv(gym.Env):
         from engine.game import PokerGame
         # Initialize with current blind level for ante support
         blind_level = self.blinds_schedule[self.current_blind_level]
-        if len(blind_level) == 2:
-            sb, bb = blind_level
-            ante = 0
-        else:
-            sb, bb, ante = blind_level
+        sb, bb, ante = blind_level
         self.game = PokerGame(self.players, starting_stack=self.starting_stack,
                              small_blind=sb, big_blind=bb, ante=ante)
         self._setup_game()
@@ -141,43 +118,37 @@ class PokerTournamentEnv(gym.Env):
         info = {"action_mask": self.legal_action_mask()}
         return obs, info
 
-    def legal_action_mask(self):
-        player = self.players[self.game.current_player_idx]
-        # If player is all-in or eliminated, no legal actions
+    def legal_action_mask(self) -> np.ndarray:
+        idx = self.game.current_player_idx
+        if idx is None or not isinstance(idx, int) or idx < 0 or idx >= len(self.players):
+            return np.array([False, False, False], dtype=bool)
+        player: Player = self.players[idx]
         if player.stack == 0 or not player.in_hand or getattr(player, "all_in", False):
             return np.array([False, False, False], dtype=bool)
         to_call = self.game.current_bet - player.current_bet
         mask = [False, False, False]  # [fold, call/check, raise]
-
-        # Fold: only legal if player is in hand and to_call > 0
         mask[0] = player.in_hand and to_call > 0
-
-        # Call/Check: legal if player is in hand and has chips (can call full or all-in for less)
         mask[1] = player.in_hand and player.stack > 0
-
-        # Raise: legal if player is in hand, has chips left after calling, and can raise at least min_raise
         min_raise = max(self.game.current_bet + self.game.last_raise_amount, self.game.big_blind)
         max_raise = player.stack + player.current_bet
-        # Can raise if: (has enough chips for min raise) or (can go all-in for more than call)
         mask[2] = (
             player.in_hand and
             player.stack > to_call and
             (max_raise >= min_raise)
         )
-
         return np.array(mask, dtype=bool)
 
-    def step(self, action):
-        player = self.players[self.game.current_player_idx]
+    def step(self, action: int):
+        idx = self.game.current_player_idx
+        if idx is None or not isinstance(idx, int) or idx < 0 or idx >= len(self.players):
+            raise Exception("Invalid current_player_idx; cannot step.")
+        player: Player = self.players[idx]
         mask = self.legal_action_mask()
         if not any(mask):
             raise Exception(f"No legal actions remain for player {player.name} (stack={player.stack}, in_hand={player.in_hand}, all_in={getattr(player, 'all_in', False)})")
         if not mask[action]:
             raise Exception(f"Illegal action {action} for player {player.name} (stack={player.stack}, in_hand={player.in_hand})")
-        
         to_call = self.game.current_bet - player.current_bet
-
-        # Defensive: If player has no chips, force check or fold
         if player.stack == 0:
             if to_call == 0:
                 poker_action = "check"
@@ -186,7 +157,6 @@ class PokerTournamentEnv(gym.Env):
                 poker_action = "fold"
                 raise_amount = 0
         else:
-            # Action mapping with all-in support
             if to_call == 0 and action == 0:
                 poker_action = "check"
                 raise_amount = 0
@@ -206,7 +176,8 @@ class PokerTournamentEnv(gym.Env):
                         current_bet=self.game.current_bet,
                         min_raise=self.game.last_raise_amount,
                         big_blind=self.game.big_blind,
-                        player_current_bet=player.current_bet
+                        player_current_bet=player.current_bet,
+                        raise_to=min_raise
                     )
                 except Exception:
                     can_raise = False
@@ -218,16 +189,12 @@ class PokerTournamentEnv(gym.Env):
                     raise_amount = 0
             else:
                 raise ValueError("Invalid action")
-
         self.game.step(poker_action, raise_amount)
-
         reward = self._get_reward(player)
         self.prev_stacks[player.name] = player.stack
-
         terminated = False
         truncated = False
         info = {"action_mask": self.legal_action_mask()}
-
         if self.game.hand_over:
             eliminated = [p for p in self.players if p.stack == 0 and p not in self.elimination_order]
             for p in eliminated:
@@ -246,16 +213,16 @@ class PokerTournamentEnv(gym.Env):
                     for i, p in enumerate(top_players, 1):
                         print(f"Top {i}: {p.name} - Stack: {p.stack}")
                 self._setup_game()
-                # Add: set truncated = True to force episode end after game reset
                 truncated = True
                 print("[DEBUG] Episode truncated: game reset for next hand.")
-
         obs = self._get_obs()
         return obs, reward, terminated, truncated, info
 
-    def _get_obs(self):
-        # Observation for the current player
-        player = self.players[self.game.current_player_idx]
+    def _get_obs(self) -> np.ndarray:
+        idx = self.game.current_player_idx
+        if idx is None or not isinstance(idx, int) or idx < 0 or idx >= len(self.players):
+            return np.zeros(5, dtype=np.float32)
+        player: Player = self.players[idx]
         obs = np.array([
             player.stack,
             self.game.current_bet - player.current_bet,
@@ -290,7 +257,7 @@ class PokerTournamentEnv(gym.Env):
     def current_player_idx(self):
         return self.game.current_player_idx
 
-    def get_obs_for_player(self, player):
+    def get_obs_for_player(self, player: Player) -> np.ndarray:
         obs = np.array([
             player.stack,
             self.game.current_bet - player.current_bet,

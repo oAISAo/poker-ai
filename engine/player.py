@@ -1,17 +1,11 @@
 # poker-ai/engine/player.py
 
+
+from typing import Optional
+from agents.base_agent import BaseAgent
 from engine.cards import Card
 
 class Player:
-    name: str
-    stack: int
-    hole_cards: list
-    current_bet: int
-    in_hand: bool
-    is_human: bool
-    all_in: bool
-    total_contributed: int
-
     def __init__(self, name: str, stack: int = 1000, is_human: bool = False):
         self.name = name
         self.stack = stack
@@ -21,6 +15,7 @@ class Player:
         self.is_human = is_human
         self.all_in = False  # Track if player is all-in
         self.total_contributed = 0  # Track total chips put in pot this hand
+        self.agent = None  # type: Optional[BaseAgent]
 
     def deal_hole_cards(self, cards):
         if len(cards) != 2:

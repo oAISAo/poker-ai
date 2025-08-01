@@ -264,7 +264,7 @@ class TestAnteInMultiTableTournament:
             player.stack = 0
         
         # Force table balancing
-        env.balance_table()
+        env.balance_table(target_table.table_id)
         
         # Remaining active tables should still have correct ante
         active_tables = env._get_active_tables()
@@ -422,7 +422,7 @@ class TestRealisticTournamentAnteProgression:
             player.stack = 0
         
         env._update_elimination_order()
-        env.balance_table()
+        env.balance_table(env.tables[0].table_id)
         
         # Force late-stage blinds with significant antes
         env.current_blind_level = min(6, len(env.blinds_schedule) - 1)

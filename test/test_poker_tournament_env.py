@@ -37,6 +37,7 @@ def test_legal_action_mask_states():
     env = PokerTournamentEnv(num_players=3)
     obs, info = env.reset()
     # Simulate a player going all-in
+    assert env.game.current_player_idx is not None
     player = env.players[env.game.current_player_idx]
     player.stack = 0
     mask = env.legal_action_mask()
@@ -70,7 +71,7 @@ def test_blinds_schedule_and_game_reset():
         steps = 0
         while not done and steps < 1000:
             mask = info["action_mask"]
-            action = np.argmax(mask)
+            action = int(np.argmax(mask))
             print(f"[DEBUG] Hand {hand_num}, Step {steps}: current_player={env.game.current_player_idx}, stack={[p.stack for p in env.players]}, in_hand={[p.in_hand for p in env.players]}, blind_level={env.current_blind_level}")
             obs, reward, terminated, truncated, info = env.step(action)
             done = terminated or truncated
@@ -88,6 +89,7 @@ def test_blinds_schedule_and_game_reset():
 def test_all_in_action_mask_and_step():
     env = PokerTournamentEnv(num_players=3)
     obs, info = env.reset()
+    assert env.game.current_player_idx is not None
     player = env.players[env.game.current_player_idx]
     # Set player to all-in
     player.stack = 0
@@ -101,6 +103,7 @@ def test_all_in_action_mask_and_step():
 def test_fold_action_removes_player_from_hand():
     env = PokerTournamentEnv(num_players=3)
     obs, info = env.reset()
+    assert env.game.current_player_idx is not None
     player = env.players[env.game.current_player_idx]
     # Force a fold
     obs, reward, terminated, truncated, info = env.step(0)
@@ -114,7 +117,7 @@ def test_blind_increase_and_reset_logic():
     steps = 0
     while not done and steps < 1000:
         mask = info["action_mask"]
-        action = np.argmax(mask)
+        action = int(np.argmax(mask))
         print(f"[DEBUG] Step {steps}: current_player={env.game.current_player_idx}, stack={[p.stack for p in env.players]}, in_hand={[p.in_hand for p in env.players]}, blind_level={env.current_blind_level}")
         obs, reward, terminated, truncated, info = env.step(action)
         done = terminated or truncated
@@ -155,6 +158,7 @@ def test_elimination_order_and_final_placement():
 def test_action_mask_for_eliminated_player():
     env = PokerTournamentEnv(num_players=3)
     obs, info = env.reset()
+    assert env.game.current_player_idx is not None
     player = env.players[env.game.current_player_idx]
     player.in_hand = False
     mask = env.legal_action_mask()
@@ -164,6 +168,7 @@ def test_action_mask_for_eliminated_player():
 def test_reward_calculation_on_stack_change():
     env = PokerTournamentEnv(num_players=3)
     obs, info = env.reset()
+    assert env.game.current_player_idx is not None
     player = env.players[env.game.current_player_idx]
     # Simulate a win
     player.stack += 100
@@ -180,6 +185,7 @@ def test_env_reset_clears_elimination_order():
 def test_action_mask_when_to_call_is_zero():
     env = PokerTournamentEnv(num_players=3)
     obs, info = env.reset()
+    assert env.game.current_player_idx is not None
     player = env.players[env.game.current_player_idx]
     env.game.current_bet = player.current_bet  # to_call = 0
     mask = env.legal_action_mask()
@@ -189,6 +195,7 @@ def test_action_mask_when_to_call_is_zero():
 def test_raise_action_mask_min_max():
     env = PokerTournamentEnv(num_players=3)
     obs, info = env.reset()
+    assert env.game.current_player_idx is not None
     player = env.players[env.game.current_player_idx]
     # Set up so player can raise
     player.stack = 1000
@@ -236,7 +243,7 @@ def test_blind_increase_with_many_players():
     steps = 0
     while not done and steps < 1000:
         mask = info["action_mask"]
-        action = np.argmax(mask)
+        action = int(np.argmax(mask))
         print(f"[DEBUG] Step {steps}: current_player={env.game.current_player_idx}, stack={[p.stack for p in env.players]}, in_hand={[p.in_hand for p in env.players]}, blind_level={env.current_blind_level}")
         obs, reward, terminated, truncated, info = env.step(action)
         done = terminated or truncated
@@ -298,7 +305,7 @@ def test_blind_schedule_progression_nine_players():
         steps = 0
         while not done and steps < 1000:
             mask = info["action_mask"]
-            action = np.argmax(mask)
+            action = int(np.argmax(mask))
             print(f"[DEBUG] Hand {hand_num}, Step {steps}: current_player={env.game.current_player_idx}, stack={[p.stack for p in env.players]}, in_hand={[p.in_hand for p in env.players]}, blind_level={env.current_blind_level}")
             obs, reward, terminated, truncated, info = env.step(action)
             done = terminated or truncated
@@ -316,6 +323,7 @@ def test_blind_schedule_progression_nine_players():
 def test_action_mask_for_player_with_exact_to_call():
     env = PokerTournamentEnv(num_players=4)
     obs, info = env.reset()
+    assert env.game.current_player_idx is not None
     player = env.players[env.game.current_player_idx]
     env.game.current_bet = player.current_bet + player.stack
     mask = env.legal_action_mask()
@@ -389,10 +397,11 @@ def test_blind_increase_and_stack_update_long_tournament():
         while not done and steps < 1000:
             mask = info["action_mask"]
             if not any(mask):
+                assert env.game.current_player_idx is not None
                 print(f"[DEBUG] No legal actions for player {env.players[env.game.current_player_idx].name}, stack={env.players[env.game.current_player_idx].stack}, in_hand={env.players[env.game.current_player_idx].in_hand}")
                 done = True
                 break
-            action = np.argmax(mask)
+            action = int(np.argmax(mask))
             obs, reward, terminated, truncated, info = env.step(action)
             done = terminated or truncated
             steps += 1
@@ -422,6 +431,8 @@ def test_action_mask_all_player_states():
         p.stack = 100
         p.in_hand = True
         env.game.current_player_idx = env.players.index(p)
+        assert env.game.current_player_idx is not None
+        _player = env.players[env.game.current_player_idx]
         mask = env.legal_action_mask()
         assert any(mask)
         # All-in
@@ -470,7 +481,8 @@ def test_dealer_sb_bb_rotation_after_each_hand():
         steps = 0
         while not done and steps < 1000:
             mask = info["action_mask"]
-            action = np.argmax(mask)
+            action = int(np.argmax(mask))
+            assert env.game.current_player_idx is not None
             print(f"[DEBUG] Hand {hand_num}, Step {steps}: Player {env.players[env.game.current_player_idx].name}, Stack {env.players[env.game.current_player_idx].stack}, Action {action}, HandOver {env.game.hand_over}")
             obs, reward, terminated, truncated, info = env.step(action)
             done = terminated or truncated

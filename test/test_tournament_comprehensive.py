@@ -106,7 +106,7 @@ def test_tournament_until_error(max_steps=1000):
             # Print current game state for debugging
             if hasattr(env, 'active_table_id') and env.active_table_id in env.tables:
                 table = env.tables[env.active_table_id]
-                if table.players and table.game.current_player_idx < len(table.players):
+                if table.players and table.game.current_player_idx is not None and table.game.current_player_idx < len(table.players):
                     player = table.players[table.game.current_player_idx]
                     print(f"Current player: {player.name}")
                     print(f"Player stack: {player.stack}, current_bet: {player.current_bet}")

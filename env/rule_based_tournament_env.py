@@ -56,31 +56,31 @@ class RuleBasedTournamentEnv(MultiTableTournamentEnv):
             return super().step(action)
             
         table = self.tables[self.active_table_id]
-        if not table.players or table.game.current_player_idx >= len(table.players):
+        idx = table.game.current_player_idx
+        if not table.players or idx is None or idx >= len(table.players):
             return super().step(action)
-            
-        current_player = table.players[table.game.current_player_idx]
+        current_player = table.players[idx]
         
         # If current player is Player_0 (Sharky), use the provided action
         if current_player.name == "Player_0":
             return super().step(action)
         
         # If current player has a rule-based agent, get their decision
-        if hasattr(current_player, 'agent'):
+        agent = getattr(current_player, 'agent', None)
+        if agent is not None:
             try:
-                # Get observation and action mask
                 obs = self._get_obs()
                 action_mask = self.legal_action_mask()
-                
-                # Get rule-based agent's decision
-                agent_action = current_player.agent.act(obs, action_mask=action_mask)
-                
-                # Use the agent's action instead of the provided action
+                # Prefer act, fallback to get_action
+                if hasattr(agent, 'act'):
+                    agent_action = agent.act(obs, action_mask=action_mask)
+                elif hasattr(agent, 'get_action'):
+                    agent_action = agent.get_action(obs, action_mask=action_mask)
+                else:
+                    raise AttributeError("Agent has neither 'act' nor 'get_action' method.")
                 return super().step(agent_action)
-                
             except Exception as e:
                 print(f"[DEBUG] Error getting rule-based agent action: {e}")
-                # Fallback to safe action
                 action_mask = self.legal_action_mask()
                 if action_mask[1]:  # Can call/check
                     return super().step(1)

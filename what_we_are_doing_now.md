@@ -3,9 +3,6 @@
 # Poker AI Agent Development Plan
 
 
-find all nested imports
-
-
 Sharky has to be rewarded when reaching heads up (that's the best reward for this agent)
 Sharky has to be rewarded when reaching the Final Table.
 

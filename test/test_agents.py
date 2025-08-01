@@ -30,6 +30,7 @@ def test_basey_get_action():
 
     if action['action'] == 'raise':
         assert 'amount' in action
-        assert 20 <= action['amount'] <= player_state['stack']
+        amount = int(action['amount'])
+        assert 20 <= amount <= player_state['stack']
 
     print(f"Basey action: {action}")

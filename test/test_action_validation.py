@@ -60,18 +60,21 @@ def test_fold_with_non_integer_to_call_fails():
 def test_call_with_enough_chips():
     """Player can call the full amount if they have enough chips."""
     result = validate_call(player_stack=100, to_call=50)
+    assert result is not None
     assert not result["is_all_in"]
     assert result["call_amount"] == 50
 
 def test_call_all_in_for_less():
     """Player can call all-in for less if they don't have enough chips."""
     result = validate_call(player_stack=30, to_call=50)
+    assert result is not None
     assert result["is_all_in"]
     assert result["call_amount"] == 30
 
 def test_call_with_exact_stack():
     """Player can call exactly with their last chip (all-in)."""
     result = validate_call(player_stack=50, to_call=50)
+    assert result is not None
     assert not result["is_all_in"]
     assert result["call_amount"] == 50
 

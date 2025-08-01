@@ -269,6 +269,7 @@ class MultiTableTournamentEnv(gym.Env):
         Handles multiple players needed/given.
         """
 
+        print(f"[DEBUG] Entered balance_table for table_id: {table_id}")
         table = self.tables.get(table_id)
         # Never forcibly end a hand due to eliminations; wait for hand to finish naturally
         # If table is in a hand, skip balancing until hand is over
