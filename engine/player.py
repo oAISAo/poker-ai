@@ -2,6 +2,7 @@
 
 
 from typing import Optional
+from typing import Optional, List
 from agents.base_agent import BaseAgent
 from engine.cards import Card
 
@@ -9,7 +10,7 @@ class Player:
     def __init__(self, name: str, stack: int = 1000, is_human: bool = False):
         self.name = name
         self.stack = stack
-        self.hole_cards = []  # list of Card objects
+        self.hole_cards: List[Card] = []
         self.current_bet = 0
         self.in_hand = True  # True if player hasn't folded
         self.is_human = is_human

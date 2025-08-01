@@ -3,8 +3,9 @@ import numpy as np
 from typing import List, Optional, Tuple
 from engine.player import Player
 from engine.game import PokerGame
-from engine.action_validation import validate_raise
+from engine.action_validation import validate_raise, RaiseValidationResult
 import builtins
+from typing import Dict
 # builtins.print = lambda *args, **kwargs: None
 
 class PokerTournamentEnv(gym.Env):
@@ -49,7 +50,7 @@ class PokerTournamentEnv(gym.Env):
             low=0, high=1e6, shape=(5,), dtype=np.float32
         )
         self.action_space = gym.spaces.Discrete(3)  # fold, call/check, raise
-        self.prev_stacks: dict[str, int] = {}
+        self.prev_stacks: Dict[str, int] = {}
 
     def _validate_blind_schedule(self):
         """Validate and normalize blind schedule to enforce consistent ante logic"""
@@ -180,7 +181,7 @@ class PokerTournamentEnv(gym.Env):
                         raise_to=min_raise
                     )
                 except Exception:
-                    can_raise = False
+                    can_raise = RaiseValidationResult(False, 0, 0, "Invalid raise")
                 if can_raise:
                     poker_action = "raise"
                     raise_amount = min(min_raise, max_raise) if max_raise >= min_raise else max_raise
