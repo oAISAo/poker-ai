@@ -24,6 +24,9 @@ jobs:
           pip install -r requirements.txt
           pip install mypy
 
+      - name: Add repo root to PYTHONPATH
+        run: echo "PYTHONPATH=$PYTHONPATH:$(pwd)" >> $GITHUB_ENV
+
       - name: Run mypy
         run: mypy .
 
