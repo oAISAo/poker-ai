@@ -381,33 +381,9 @@ class MultiTableTournamentEnv(gym.Env):
         else:
             players_to_give = current - target
             print(f"[BALANCE_TABLE] Table {table_id} has {players_to_give} surplus player(s) (target {target}).")
-            # Find tables needing players
-            for receiver_id in table_ids_sorted:
-                if receiver_id == table_id:
-                    continue
-                receiver_table = table_map[receiver_id]
-                receiver_current = receiver_table.get_active_player_count()
-                receiver_target = target_map[receiver_id]
-                need = receiver_target - receiver_current
-                while need > 0 and players_to_give > 0:
-                    moveable = [p for p in table.players if p.stack > 0]
-                    if not moveable:
-                        break
-                    player_to_move = moveable[0]
-                    print(f"[BALANCE_TABLE] Moving {player_to_move.name} from table {table_id} to table {receiver_id}")
-                    table.remove_player(player_to_move)
-                    receiver_table.add_player(player_to_move)
-                    # Player moved mid-hand joins next hand only
-                    if receiver_table.game.hand_over:
-                        player_to_move.in_hand = True
-                    else:
-                        player_to_move.in_hand = False
-                    print(f"[BALANCE_TABLE] Moved {player_to_move.name} from table {table_id} to table {receiver_id}")
-                    # Invariant check after move
-                    table.check_player_list_invariant(context=f"after removing {player_to_move.name}")
-                    receiver_table.check_player_list_invariant(context=f"after adding {player_to_move.name}")
-                    need -= 1
-                    players_to_give -= 1
+            
+            # SOPHISTICATED BALANCING: Use advanced player selection and table prioritization
+            self._execute_sophisticated_balancing(table, players_to_give, target_map, table_map, table_ids_sorted)
         # Fix game state for all affected tables
         print("[BALANCE_TABLE] Table player counts after balancing:")
         for tid, t in self.tables.items():
@@ -415,6 +391,173 @@ class MultiTableTournamentEnv(gym.Env):
         for t in active_tables:
             self._fix_game_state_after_eliminations(t)
         print(f"[BALANCE_TABLE] Table {table_id} balancing complete.")
+    
+    def _execute_sophisticated_balancing(self, source_table: Table, players_to_give: int, 
+                                       target_map: Dict[int, int], table_map: Dict[int, Table], 
+                                       table_ids_sorted: List[int]):
+        """
+        Execute sophisticated table balancing with advanced player selection and table prioritization.
+        
+        Advanced features:
+        1. Priority-based table selection (tables closest to breaking get priority)
+        2. Stack-aware player selection (considers stack sizes and position)
+        3. Dealer position preservation when possible
+        4. Blind posting fairness (avoids moving players who just posted blinds)
+        """
+        print(f"[DEBUG] [SOPHISTICATED_BALANCE] Starting advanced balancing for table {source_table.table_id}")
+        
+        # Step 1: Create prioritized list of receiver tables
+        receiver_tables = []
+        for receiver_id in table_ids_sorted:
+            if receiver_id == source_table.table_id:
+                continue
+            receiver_table = table_map[receiver_id]
+            receiver_current = receiver_table.get_active_player_count()
+            receiver_target = target_map[receiver_id]
+            need = receiver_target - receiver_current
+            
+            if need > 0:
+                # Calculate priority score (higher = more urgent)
+                # Priority factors: urgency (how far below target), table stability
+                urgency_score = need * 10  # More needed = higher priority
+                stability_score = 5 if receiver_current >= 4 else 0  # Stable tables get bonus
+                breaking_risk = max(0, (self.min_players_per_table - receiver_current) * 20)  # Risk of breaking
+                
+                priority = urgency_score + stability_score + breaking_risk
+                receiver_tables.append((priority, receiver_id, receiver_table, need))
+        
+        # Sort by priority (highest first)
+        receiver_tables.sort(key=lambda x: x[0], reverse=True)
+        print(f"[DEBUG] [SOPHISTICATED_BALANCE] Receiver table priorities: {[(tid, priority, need) for priority, tid, _, need in receiver_tables]}")
+        
+        # Step 2: Execute moves with sophisticated player selection
+        for priority, receiver_id, receiver_table, need in receiver_tables:
+            if players_to_give <= 0:
+                break
+                
+            moves_to_make = min(need, players_to_give)
+            print(f"[DEBUG] [SOPHISTICATED_BALANCE] Moving {moves_to_make} player(s) to table {receiver_id} (priority: {priority})")
+            
+            for _ in range(moves_to_make):
+                # Advanced player selection
+                selected_player = self._select_optimal_player_for_move(source_table, receiver_table)
+                if not selected_player:
+                    print(f"[DEBUG] [SOPHISTICATED_BALANCE] No suitable player found for move")
+                    break
+                
+                # Execute the move with advanced state handling
+                self._execute_advanced_player_move(selected_player, source_table, receiver_table)
+                players_to_give -= 1
+        
+        print(f"[DEBUG] [SOPHISTICATED_BALANCE] Advanced balancing complete for table {source_table.table_id}")
+    
+    def _select_optimal_player_for_move(self, source_table: Table, target_table: Table) -> Optional[Player]:
+        """
+        Select the optimal player to move based on sophisticated criteria.
+        
+        Selection criteria (in order of priority):
+        1. Avoid players who just posted blinds (fairness)
+        2. Prefer players not in critical dealer positions
+        3. Consider stack sizes for balance
+        4. Avoid players currently in hand if possible
+        """
+        moveable_players = [p for p in source_table.players if p.stack > 0]
+        if not moveable_players:
+            return None
+        
+        print(f"[DEBUG] [PLAYER_SELECTION] Evaluating {len(moveable_players)} moveable players")
+        
+        # Score each player (lower score = better candidate for moving)
+        player_scores = []
+        
+        for player in moveable_players:
+            score = 0
+            reasons = []
+            
+            # Factor 1: Recently posted blinds (avoid moving them - fairness)
+            if hasattr(source_table.game, 'players_who_posted_blinds') and player.name in source_table.game.players_who_posted_blinds:
+                score += 100  # Heavy penalty for recent blind posters
+                reasons.append("recent_blind_poster")
+            
+            # Factor 2: Dealer position considerations
+            if hasattr(source_table.game, 'dealer_position'):
+                player_idx = source_table.players.index(player)
+                dealer_idx = source_table.game.dealer_position
+                # Small penalty for dealer, larger penalty for players in small/big blind positions
+                if player_idx == dealer_idx:
+                    score += 10
+                    reasons.append("dealer")
+                elif player_idx == (dealer_idx + 1) % len(source_table.players):
+                    score += 30  # Small blind position
+                    reasons.append("small_blind_position")
+                elif player_idx == (dealer_idx + 2) % len(source_table.players):
+                    score += 30  # Big blind position
+                    reasons.append("big_blind_position")
+            
+            # Factor 3: Stack balance considerations
+            # Prefer moving medium stacks to maintain balance
+            avg_stack = sum(p.stack for p in moveable_players) / len(moveable_players)
+            stack_deviation = abs(player.stack - avg_stack) / avg_stack if avg_stack > 0 else 0
+            score += stack_deviation * 20  # Penalty for extreme stacks
+            if stack_deviation > 0.5:
+                reasons.append("extreme_stack")
+            
+            # Factor 4: Current hand participation
+            if player.in_hand and not source_table.game.hand_over:
+                score += 50  # Prefer not to move players mid-hand
+                reasons.append("in_current_hand")
+            
+            # Factor 5: Player name consideration (avoid moving Sharky if possible for training consistency)
+            if player.name == "Player_0":  # Sharky
+                score += 15  # Small penalty to prefer keeping Sharky at current table
+                reasons.append("is_sharky")
+            
+            player_scores.append((score, player, reasons))
+            print(f"[DEBUG] [PLAYER_SELECTION] {player.name}: score={score:.1f}, reasons={reasons}")
+        
+        # Sort by score (lowest first) and select best candidate
+        player_scores.sort(key=lambda x: x[0])
+        selected_score, selected_player, selected_reasons = player_scores[0]
+        
+        print(f"[DEBUG] [PLAYER_SELECTION] Selected {selected_player.name} (score: {selected_score:.1f}, reasons: {selected_reasons})")
+        return selected_player
+    
+    def _execute_advanced_player_move(self, player: Player, source_table: Table, target_table: Table):
+        """
+        Execute player move with advanced state handling and poker rule compliance.
+        """
+        print(f"[DEBUG] [ADVANCED_MOVE] Moving {player.name} from table {source_table.table_id} to table {target_table.table_id}")
+        
+        # Store player state before move
+        original_stack = player.stack
+        was_in_hand = player.in_hand
+        
+        # Execute the move
+        source_table.remove_player(player)
+        target_table.add_player(player)
+        
+        # Advanced state handling for target table
+        if target_table.game.hand_over:
+            # Hand is over - player joins next hand
+            player.in_hand = True
+            print(f"[DEBUG] [ADVANCED_MOVE] {player.name} will join next hand at table {target_table.table_id}")
+        else:
+            # Hand in progress - player sits out current hand
+            player.in_hand = False
+            print(f"[DEBUG] [ADVANCED_MOVE] {player.name} sits out current hand at table {target_table.table_id}")
+        
+        # Verify move integrity
+        if player.stack != original_stack:
+            print(f"[ERROR] Player stack changed during move: {original_stack} -> {player.stack}")
+            #sys.exit(1)
+        
+        print(f"[DEBUG] [ADVANCED_MOVE] Successfully moved {player.name} (stack: {player.stack})")
+        
+        # Invariant checks
+        source_table.check_player_list_invariant(context=f"after removing {player.name}")
+        target_table.check_player_list_invariant(context=f"after adding {player.name}")
+        
+        print(f"[BALANCE_TABLE] Advanced move complete: {player.name} from table {source_table.table_id} to table {target_table.table_id}")
     
     def _fix_game_state_after_eliminations(self, table: Table):
         """Fix game state after manual eliminations (e.g., setting stack=0)"""
@@ -1271,7 +1414,7 @@ class MultiTableTournamentEnv(gym.Env):
                 # Check for inconsistent state and fix it using the game's validation system
                 if not table.game._validate_state_consistency(f"before raise by {player.name}"):
                     print(f"[WARNING] Table {getattr(self, 'table_id', '?')} State inconsistency detected before raise - attempting fix...")
-                    # sys.exit(1) # aisa todo
+                    #sys.exit(1) # aisa todo
                     table.game.fix_state_inconsistencies()
                     # Recalculate to_call after fixing state
                     to_call = max(0, table.game.current_bet - player.current_bet)

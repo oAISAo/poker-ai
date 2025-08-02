@@ -17,7 +17,7 @@ from env.rule_based_tournament_env import create_rule_based_training_env
 def main():
     if len(sys.argv) != 2:
         print("Usage: python evaluate_sharky_simple.py <version>")
-        # sys.exit(1)
+        #sys.exit(1)
     
     version = sys.argv[1]
     
