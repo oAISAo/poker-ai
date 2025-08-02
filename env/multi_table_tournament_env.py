@@ -929,7 +929,7 @@ class MultiTableTournamentEnv(gym.Env):
                 # Check for inconsistent state and fix it using the game's validation system
                 if not table.game._validate_state_consistency(f"before raise by {player.name}"):
                     print(f"[WARNING] Table {getattr(self, 'table_id', '?')} State inconsistency detected before raise - attempting fix...")
-                    sys.exit(1) # aisa todo
+                    # sys.exit(1) # aisa todo
                     table.game.fix_state_inconsistencies()
                     # Recalculate to_call after fixing state
                     to_call = max(0, table.game.current_bet - player.current_bet)
