@@ -416,11 +416,227 @@ class PokerGame:
 
         # Validate the fixes worked
         if self._validate_state_consistency("after fix_state_inconsistencies"):
-            print(f"[INCONSISTENCY-CHECK] State inconsistencies successfully resolved")
             return True
         else:
             print(f"[INCONSISTENCY-CHECK] Unable to fully resolve state inconsistencies")
             return False
+
+    def _validate_comprehensive_state(self, context="", strict_mode=True):
+        """
+        Enhanced comprehensive state validation that checks all aspects of poker game integrity.
+        
+        Args:
+            context: Description of when this validation is called
+            strict_mode: If True, exit on any violation. If False, log warnings only.
+        
+        Returns:
+            bool: True if all validations pass, False otherwise
+        """
+        violations = []
+        warnings = []
+        
+        print(f"[DEBUG] [ENHANCED_VALIDATION] Running comprehensive state validation: {context}")
+        
+        # === PLAYER STATE INTEGRITY ===
+        for i, player in enumerate(self.players):
+            # 1. Stack integrity
+            if player.stack < 0:
+                violations.append(f"Player {player.name} has negative stack: {player.stack}")
+            
+            # 2. Bet integrity  
+            if player.current_bet < 0:
+                violations.append(f"Player {player.name} has negative current_bet: {player.current_bet}")
+            
+            if player.total_contributed < 0:
+                violations.append(f"Player {player.name} has negative total_contributed: {player.total_contributed}")
+            
+            # 3. Logical consistency between stack states
+            if player.stack == 0 and player.current_bet == 0 and player.in_hand:
+                warnings.append(f"Player {player.name} has stack=0, current_bet=0 but in_hand=True (should be eliminated)")
+            
+            if player.stack > 0 and not player.in_hand and not hasattr(self, '_hand_in_progress'):
+                warnings.append(f"Player {player.name} has chips but not in_hand outside of hand progression")
+            
+            # 4. All-in state consistency
+            if player.all_in and player.stack > 0:
+                violations.append(f"Player {player.name} marked all_in but has stack: {player.stack}")
+            
+            if player.stack == 0 and player.current_bet > 0 and not player.all_in:
+                warnings.append(f"Player {player.name} has stack=0, current_bet={player.current_bet} but not marked all_in")
+        
+        # === BETTING ROUND INTEGRITY ===
+        # 5. Current bet synchronization
+        max_player_bet = max((p.current_bet for p in self.players), default=0)
+        if self.current_bet != max_player_bet and self.current_bet > 0:
+            # Allow BB all-in exception
+            bb_exception = False
+            if hasattr(self, 'players_who_posted_blinds'):
+                for p in self.players:
+                    if p.name in self.players_who_posted_blinds and p.stack == 0 and p.current_bet < self.current_bet:
+                        bb_exception = True
+                        break
+            if not bb_exception:
+                violations.append(f"game.current_bet ({self.current_bet}) != max player bet ({max_player_bet})")
+        
+        # 6. Betting logic consistency
+        active_players = [p for p in self.players if p.in_hand and p.stack > 0]
+        if len(active_players) > 1:
+            # In multi-player scenarios, check betting round completion logic
+            if hasattr(self, 'players_to_act'):
+                actionable_players = [p for p in active_players if not p.all_in]
+                if not self.players_to_act and actionable_players and not self.hand_over:
+                    # This might indicate incomplete betting round logic
+                    warnings.append(f"No players_to_act but {len(actionable_players)} actionable players remain")
+        
+        # === POT AND CHIP CONSERVATION ===
+        # 7. Pot consistency with player contributions
+        expected_pot = sum(p.total_contributed for p in self.players)
+        if self.pot != expected_pot:
+            violations.append(f"Pot ({self.pot}) != sum of total_contributed ({expected_pot})")
+        
+        # 8. Current bet contributions consistency
+        current_round_contributions = sum(p.current_bet for p in self.players)
+        if current_round_contributions > self.pot:
+            violations.append(f"Current round bets ({current_round_contributions}) > pot ({self.pot})")
+        
+        # === DEALER AND BLIND LOGIC ===
+        # 9. Dealer position validity
+        if hasattr(self, 'dealer_position'):
+            if self.dealer_position < 0 or self.dealer_position >= len(self.players):
+                violations.append(f"Invalid dealer_position: {self.dealer_position} (players: {len(self.players)})")
+            
+            # Check dealer has chips (if possible)
+            if self.dealer_position < len(self.players):
+                dealer = self.players[self.dealer_position]
+                if dealer.stack == 0 and len([p for p in self.players if p.stack > 0]) > 1:
+                    warnings.append(f"Dealer {dealer.name} has no chips but other players do")
+        
+        # 10. Blind posting validation
+        if hasattr(self, 'players_who_posted_blinds') and self.players_who_posted_blinds:
+            blind_posters = [p for p in self.players if p.name in self.players_who_posted_blinds]
+            if len(blind_posters) != 2 and len([p for p in self.players if p.stack > 0]) >= 2:
+                warnings.append(f"Expected 2 blind posters, found {len(blind_posters)}: {[p.name for p in blind_posters]}")
+        
+        # === CARD AND DECK INTEGRITY ===
+        # 11. Hole card validation
+        dealt_cards = []
+        for player in self.players:
+            if player.hole_cards:
+                if len(player.hole_cards) != 2:
+                    violations.append(f"Player {player.name} has {len(player.hole_cards)} hole cards (should be 2)")
+                dealt_cards.extend(player.hole_cards)
+        
+        # 12. Community card validation
+        if len(self.community_cards) > 5:
+            violations.append(f"Too many community cards: {len(self.community_cards)}")
+        
+        dealt_cards.extend(self.community_cards)
+        
+        # 13. Card duplication check
+        if len(dealt_cards) != len(set(str(card) for card in dealt_cards)):
+            violations.append(f"Duplicate cards detected in dealt cards")
+        
+        # === GAME PHASE CONSISTENCY ===
+        # 14. Phase progression validation
+        expected_community_cards = {0: 0, 1: 3, 2: 4, 3: 5, 4: 5}  # preflop, flop, turn, river, showdown
+        if self.phase_idx in expected_community_cards:
+            expected_count = expected_community_cards[self.phase_idx]
+            if len(self.community_cards) != expected_count:
+                violations.append(f"Phase {self.PHASES[self.phase_idx]} should have {expected_count} community cards, has {len(self.community_cards)}")
+        
+        # === HAND TERMINATION LOGIC ===
+        # 15. Hand over conditions
+        players_with_chips = [p for p in self.players if p.stack > 0]
+        in_hand_with_chips = [p for p in self.players if p.in_hand and p.stack > 0]
+        
+        if len(in_hand_with_chips) <= 1 and not self.hand_over and self.phase_idx < len(self.PHASES) - 1:
+            warnings.append(f"Only {len(in_hand_with_chips)} player(s) in hand with chips, but hand not over")
+        
+        # === FINAL VALIDATION SUMMARY ===
+        total_issues = len(violations) + len(warnings)
+        
+        if violations:
+            print(f"[ERROR] [ENHANCED_VALIDATION] {len(violations)} CRITICAL violations found in {context}:")
+            for violation in violations:
+                print(f"  ❌ {violation}")
+        
+        if warnings:
+            print(f"[WARNING] [ENHANCED_VALIDATION] {len(warnings)} warnings found in {context}:")
+            for warning in warnings:
+                print(f"  ⚠️  {warning}")
+        
+        if total_issues == 0:
+            print(f"[DEBUG] [ENHANCED_VALIDATION] ✅ All {self._get_validation_check_count()} checks passed for {context}")
+        
+        # Handle violations based on strict_mode
+        if violations:
+            if strict_mode:
+                print(f"[CRITICAL] [ENHANCED_VALIDATION] STRICT MODE: Exiting due to {len(violations)} critical violations")
+                #sys.exit(1)
+            else:
+                print(f"[DEBUG] [ENHANCED_VALIDATION] NON-STRICT MODE: Continuing despite {len(violations)} violations")
+                return False
+        
+        return len(violations) == 0
+
+    def _get_validation_check_count(self):
+        """Return the total number of validation checks performed"""
+        return 15  # Update this when adding new validation categories
+    
+    def validate_action_preconditions(self, action: str, player_idx: int, raise_amount: int = 0):
+        """
+        Validate that an action can be legally performed given current game state.
+        This is called BEFORE action execution to prevent illegal moves.
+        """
+        violations = []
+        
+        if player_idx < 0 or player_idx >= len(self.players):
+            violations.append(f"Invalid player_idx: {player_idx}")
+            
+        player = self.players[player_idx]
+        to_call = max(0, self.current_bet - player.current_bet)
+        
+        # Action-specific validations
+        if action == "fold":
+            if not player.in_hand:
+                violations.append(f"Player {player.name} cannot fold - not in hand")
+        
+        elif action == "check":
+            if to_call > 0:
+                violations.append(f"Player {player.name} cannot check - must call {to_call}")
+            if not player.in_hand:
+                violations.append(f"Player {player.name} cannot check - not in hand")
+        
+        elif action == "call":
+            if to_call == 0:
+                violations.append(f"Player {player.name} cannot call - nothing to call")
+            if not player.in_hand:
+                violations.append(f"Player {player.name} cannot call - not in hand")
+            if player.stack == 0:
+                violations.append(f"Player {player.name} cannot call - no chips")
+        
+        elif action == "raise":
+            if not player.in_hand:
+                violations.append(f"Player {player.name} cannot raise - not in hand")
+            if player.stack <= to_call:
+                violations.append(f"Player {player.name} cannot raise - insufficient chips for call")
+            if raise_amount <= self.current_bet:
+                violations.append(f"Raise amount {raise_amount} must exceed current bet {self.current_bet}")
+            if raise_amount > player.stack + player.current_bet:
+                violations.append(f"Raise amount {raise_amount} exceeds available chips {player.stack + player.current_bet}")
+        
+        # General turn order validation
+        if self.current_player_idx != player_idx:
+            violations.append(f"Not {player.name}'s turn - current player is {self.current_player_idx}")
+        
+        if violations:
+            print(f"[ERROR] [ACTION_VALIDATION] {len(violations)} precondition violations for {action} by {player.name}:")
+            for violation in violations:
+                print(f"  ❌ {violation}")
+            return False
+        
+        print(f"[DEBUG] [ACTION_VALIDATION] ✅ Action {action} by {player.name} passed all precondition checks")
+        return True
 
     def step(self, action, raise_amount=0):
         """

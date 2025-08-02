@@ -2,8 +2,6 @@
 
 # Poker AI Agent Development Plan
 
-Improved Balancing: More sophisticated table balancing algorithms
-State Validation: Enhanced consistency checks (which you've already been working on)
 Robust Error Handling: Better recovery from edge cases
 
 

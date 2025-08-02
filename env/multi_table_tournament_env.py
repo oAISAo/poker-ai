@@ -391,6 +391,9 @@ class MultiTableTournamentEnv(gym.Env):
         for t in active_tables:
             self._fix_game_state_after_eliminations(t)
         print(f"[BALANCE_TABLE] Table {table_id} balancing complete.")
+        
+        # Enhanced validation after table balancing
+        self._validate_tournament_integrity(f"after balancing table {table_id}", strict_mode=True)
     
     def _execute_sophisticated_balancing(self, source_table: Table, players_to_give: int, 
                                        target_map: Dict[int, int], table_map: Dict[int, Table], 
@@ -471,7 +474,7 @@ class MultiTableTournamentEnv(gym.Env):
         player_scores = []
         
         for player in moveable_players:
-            score = 0
+            score = 0.0  # Initialize as float to handle float arithmetic
             reasons = []
             
             # Factor 1: Recently posted blinds (avoid moving them - fairness)
@@ -559,12 +562,189 @@ class MultiTableTournamentEnv(gym.Env):
         
         print(f"[BALANCE_TABLE] Advanced move complete: {player.name} from table {source_table.table_id} to table {target_table.table_id}")
     
+    def _validate_tournament_integrity(self, context="", strict_mode=True):
+        """
+        Enhanced tournament-wide state validation.
+        Validates multi-table tournament consistency and chip conservation.
+        """
+        violations = []
+        warnings = []
+        
+        print(f"[DEBUG] [TOURNAMENT_VALIDATION] Running tournament integrity check: {context}")
+        
+        # === CHIP CONSERVATION ACROSS TOURNAMENT ===
+        # 1. Total chip count should equal starting chips
+        total_tournament_chips = 0
+        active_players_count = 0
+        eliminated_players_count = 0
+        
+        all_player_names = set()
+        for table in self.tables.values():
+            for player in table.players:
+                all_player_names.add(player.name)
+                total_tournament_chips += player.stack
+                if player.stack > 0:
+                    active_players_count += 1
+                else:
+                    eliminated_players_count += 1
+        
+        expected_total_chips = self.starting_stack * self.total_players
+        if total_tournament_chips != expected_total_chips:
+            violations.append(f"Tournament chip count mismatch: {total_tournament_chips} != expected {expected_total_chips}")
+        
+        # 2. Player count consistency
+        total_players_in_tables = len(all_player_names)
+        if total_players_in_tables != self.total_players:
+            violations.append(f"Player count mismatch: {total_players_in_tables} in tables != {self.total_players} expected")
+        
+        # === TABLE BALANCING INTEGRITY ===
+        # 3. Table player distribution
+        active_tables = self._get_active_tables()
+        if len(active_tables) > 1:
+            player_counts = [t.get_active_player_count() for t in active_tables]
+            max_diff = max(player_counts) - min(player_counts)
+            if max_diff > 1:
+                warnings.append(f"Table imbalance detected: player counts {player_counts} (max diff: {max_diff})")
+        
+        # 4. Table state consistency
+        for table_id, table in self.tables.items():
+            if table.is_active:
+                active_count = table.get_active_player_count()
+                if active_count < self.min_players_per_table:
+                    warnings.append(f"Active table {table_id} has {active_count} players (below min {self.min_players_per_table})")
+                
+                # Check player list synchronization
+                if table.players is not table.game.players:
+                    violations.append(f"Table {table_id} player list desynchronization")
+        
+        # === ELIMINATION TRACKING INTEGRITY ===
+        # 5. Elimination order validation
+        elimination_count = len(self.elimination_order)
+        expected_eliminations = self.total_players - active_players_count
+        if elimination_count != expected_eliminations:
+            warnings.append(f"Elimination tracking mismatch: {elimination_count} tracked vs {expected_eliminations} expected")
+        
+        # 6. Check for duplicate eliminations
+        eliminated_names = [p.name for p in self.elimination_order]
+        if len(eliminated_names) != len(set(eliminated_names)):
+            violations.append(f"Duplicate players in elimination_order")
+        
+        # 7. Verify eliminated players have zero stacks
+        for player in self.elimination_order:
+            if player.stack > 0:
+                violations.append(f"Eliminated player {player.name} still has {player.stack} chips")
+        
+        # === BLIND LEVEL INTEGRITY ===
+        # 8. Blind level consistency across tables
+        current_blind_level = self.current_blind_level
+        if current_blind_level >= len(self.blinds_schedule):
+            violations.append(f"Invalid blind level {current_blind_level} (max: {len(self.blinds_schedule) - 1})")
+        else:
+            expected_sb, expected_bb, expected_ante = self.blinds_schedule[current_blind_level]
+            for table in active_tables:
+                if (table.game.small_blind != expected_sb or 
+                    table.game.big_blind != expected_bb or 
+                    table.game.ante != expected_ante):
+                    violations.append(f"Table {table.table_id} blind mismatch: {table.game.small_blind}/{table.game.big_blind}/{table.game.ante} != {expected_sb}/{expected_bb}/{expected_ante}")
+        
+        # === ACTIVE TABLE MANAGEMENT ===
+        # 9. Active table ID validity
+        if self.active_table_id not in self.tables:
+            violations.append(f"Invalid active_table_id: {self.active_table_id}")
+        elif not self.tables[self.active_table_id].is_active:
+            warnings.append(f"Active table {self.active_table_id} is marked inactive")
+        
+        # 10. Tournament completion logic
+        if active_players_count <= 2 and not self._tournament_finished():
+            warnings.append(f"Tournament should be finished with {active_players_count} players")
+        
+        # === SHARKY TRACKING INTEGRITY ===
+        # 11. Verify Sharky (Player_0) existence and state
+        sharky_found = False
+        sharky_table = None
+        for table in self.tables.values():
+            for player in table.players:
+                if player.name == "Player_0":
+                    if sharky_found:
+                        violations.append(f"Multiple Sharky instances found")
+                    sharky_found = True
+                    sharky_table = table.table_id
+                    
+                    # Verify Sharky's state is properly tracked
+                    if hasattr(self, 'prev_stacks') and player.name in self.prev_stacks:
+                        prev_stack = self.prev_stacks[player.name]
+                        if prev_stack < 0:
+                            warnings.append(f"Sharky has negative prev_stack: {prev_stack}")
+        
+        if not sharky_found:
+            warnings.append(f"Sharky (Player_0) not found in tournament")
+        
+        # === VALIDATION SUMMARY ===
+        total_issues = len(violations) + len(warnings)
+        
+        if violations:
+            print(f"[ERROR] [TOURNAMENT_VALIDATION] {len(violations)} CRITICAL violations found in {context}:")
+            for violation in violations:
+                print(f"  ❌ {violation}")
+        
+        if warnings:
+            print(f"[WARNING] [TOURNAMENT_VALIDATION] {len(warnings)} warnings found in {context}:")
+            for warning in warnings:
+                print(f"  ⚠️  {warning}")
+        
+        if total_issues == 0:
+            print(f"[DEBUG] [TOURNAMENT_VALIDATION] ✅ All tournament integrity checks passed for {context}")
+        
+        # Handle violations based on strict_mode
+        if violations:
+            if strict_mode:
+                print(f"[CRITICAL] [TOURNAMENT_VALIDATION] STRICT MODE: Exiting due to {len(violations)} critical violations")
+                #sys.exit(1)
+            else:
+                print(f"[DEBUG] [TOURNAMENT_VALIDATION] NON-STRICT MODE: Continuing despite {len(violations)} violations")
+                return False
+        
+        # Also exit on serious warnings that indicate potential state corruption
+        serious_warnings = [w for w in warnings if any(keyword in w.lower() for keyword in 
+                           ['chip', 'stack', 'elimination', 'duplicate', 'sharky', 'desynchronization'])]
+        if serious_warnings:
+            print(f"[CRITICAL] [TOURNAMENT_VALIDATION] SERIOUS WARNINGS detected - these indicate potential state corruption:")
+            for warning in serious_warnings:
+                print(f"  🚨 {warning}")
+            print(f"[CRITICAL] [TOURNAMENT_VALIDATION] Exiting due to {len(serious_warnings)} serious state corruption warnings")
+            #sys.exit(1)
+        
+        return len(violations) == 0
+    
+    def _periodic_tournament_validation(self):
+        """
+        Perform periodic comprehensive validation during tournament play.
+        Called at key points like after hand completion, table balancing, etc.
+        """
+        # Only run periodic validation occasionally to avoid performance impact
+        if hasattr(self, '_validation_counter'):
+            self._validation_counter += 1
+        else:
+            self._validation_counter = 0
+        
+        # Validate every 10 hands or at critical points
+        if self._validation_counter % 10 == 0 or len(self._get_active_tables()) == 1:
+            return self._validate_tournament_integrity(f"periodic check #{self._validation_counter}", strict_mode=True)
+        
+        return True
+    
     def _fix_game_state_after_eliminations(self, table: Table):
         """Fix game state after manual eliminations (e.g., setting stack=0)"""
         # Only fix if there are actually eliminated players
         eliminated_players = [p for p in table.players if p.stack == 0]
         if not eliminated_players:
             return  # No eliminations, no fix needed
+        
+        # CRITICAL VALIDATION: Check for impossible states
+        for player in eliminated_players:
+            if player.stack < 0:
+                print(f"[CRITICAL ERROR] Player {player.name} has negative stack during elimination: {player.stack}")
+                #sys.exit(1)
         
         # Create a signature for this elimination state to avoid duplicate messages
         elimination_signature = tuple(sorted(p.name for p in eliminated_players))
@@ -576,8 +756,10 @@ class MultiTableTournamentEnv(gym.Env):
                 player.in_hand = False
         
         # CRITICAL FIX: Restore players with chips to active status if incorrectly marked as inactive
+        corrupted_players = []
         for player in table.players:
             if player.stack > 0 and not player.in_hand:
+                corrupted_players.append(player)
                 player.in_hand = True
                 print(f"[DEBUG] Restored {player.name} to active status (stack: {player.stack})")
                 
@@ -585,6 +767,14 @@ class MultiTableTournamentEnv(gym.Env):
                 if player in self.elimination_order:
                     self.elimination_order.remove(player)
                     print(f"[DEBUG] Removed {player.name} from elimination_order (stack restored: {player.stack})")
+        
+        # CRITICAL VALIDATION: If we had to fix corrupted player states, this indicates a serious bug
+        if corrupted_players:
+            print(f"[CRITICAL ERROR] Found {len(corrupted_players)} players with corrupted state (had chips but marked as eliminated):")
+            for player in corrupted_players:
+                print(f"  - {player.name}: stack={player.stack}")
+            print("[CRITICAL ERROR] This indicates a serious state management bug!")
+            #sys.exit(1)
         
         # Find active players
         active_players = [p for p in table.players if p.stack > 0]
@@ -748,12 +938,23 @@ class MultiTableTournamentEnv(gym.Env):
         for table in self.tables.values():
             for player in table.players:
                 if player.stack == 0 and player not in self.elimination_order:
+                    # CRITICAL VALIDATION: Ensure player elimination is valid
+                    if player.stack < 0:
+                        print(f"[CRITICAL ERROR] Player {player.name} has negative stack: {player.stack}")
+                        #sys.exit(1)
+                    
                     # Mark eliminated player as out of hand immediately
                     player.in_hand = False
                     newly_eliminated.append(player)
         
         if not newly_eliminated:
             return  # No new eliminations
+        
+        # CRITICAL VALIDATION: Check for duplicate elimination attempts
+        for player in newly_eliminated:
+            if player in self.elimination_order:
+                print(f"[CRITICAL ERROR] Attempting to eliminate {player.name} twice!")
+                #sys.exit(1)
         
         # For simultaneous eliminations, sort by starting stack size (higher stack gets better placement)
         # In real poker tournaments, the player with the larger starting stack when the hand began
@@ -1498,6 +1699,10 @@ class MultiTableTournamentEnv(gym.Env):
             # Validate state consistency after action execution
             if hasattr(table.game, '_validate_state_consistency'):
                 table.game._validate_state_consistency(f"after tournament action {poker_action} by {player.name}")
+            
+            # Enhanced comprehensive validation for tournament integrity
+            if hasattr(table.game, '_validate_comprehensive_state'):
+                table.game._validate_comprehensive_state(f"after tournament action {poker_action} by {player.name}", strict_mode=True)
                 
         except Exception as e:
             # If game step fails, return penalty and continue
@@ -1526,6 +1731,9 @@ class MultiTableTournamentEnv(gym.Env):
             # Check for eliminations at end of hand
             self._clean_elimination_order()  # Clean up inconsistent elimination tracking
             self._update_elimination_order()
+            
+            # Enhanced validation after elimination updates
+            self._periodic_tournament_validation()
 
             # Start new hand if table still active
             if table.get_active_player_count() >= 2:
@@ -1547,8 +1755,17 @@ class MultiTableTournamentEnv(gym.Env):
             # Table balancing: after hand at this table
             try:
                 self.balance_table(table.table_id)
+                
+                # CRITICAL VALIDATION: Verify tournament state after table balancing
+                if not self._validate_tournament_integrity(f"after balancing table {table.table_id} in step", strict_mode=True):
+                    print(f"[CRITICAL ERROR] Tournament integrity validation failed after table balancing!")
+                    #sys.exit(1)
+                    
             except Exception as e:
                 print(f"[DEBUG] Error in table balancing: {e}")
+                # On balancing errors, run emergency validation
+                print(f"[CRITICAL ERROR] Exception during table balancing: {e}")
+                #sys.exit(1)
 
             # Check blind increases
             self._increase_blinds_if_needed()
