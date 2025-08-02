@@ -67,7 +67,7 @@ def train_sharky_vs_rule_based(
             'was dealt:', 'Community cards dealt:', 'checks.', 'calls.', 'raises.', 'folds.',
             'Stack:', 'CurrentBet:', 'Pot:', 'ToCall:', 'RaiseTo:', 'Fixed game state',
             'Advancing to phase:', 'Removing', 'from players_to_act', 'handle_',
-            '[WARNING] Pot mismatch:', '--- Showdown ---', 'Blinds increased to',
+            '[BALANCE_TABLE]', '--- Showdown ---', 'Blinds increased to',
             'wins', 'chips from pot', 'SB stack:', 'BB stack:', 'Removed', 'eliminated players',
             'Error in game step',
         ]):

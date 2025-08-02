@@ -1,5 +1,6 @@
 # poker-ai/engine/game.py
 
+import sys
 from engine import player
 from engine.cards import Deck
 from engine.player import Player
@@ -7,10 +8,31 @@ from engine.hand_evaluator import hand_rank
 from utils.enums import GameMode
 from engine.action_validation import validate_raise, validate_call, validate_check, validate_fold, ActionValidationError
 class PokerGame:
+    def collect_bet(self, player, amount, suppress_log=False):
+        """Take chips from player and add to pot, always keeping pot and contributions in sync."""
+        actual_bet = player.bet_chips(amount, suppress_log=suppress_log)
+        self.pot += actual_bet
+        self._assert_pot_consistency()
+        return actual_bet
+
+    def collect_ante(self, player, amount, suppress_log=False):
+        """Take ante from player and add to pot, always keeping pot and contributions in sync."""
+        actual_ante = player.post_ante(amount, suppress_log=suppress_log)
+        self.pot += actual_ante
+        self._assert_pot_consistency()
+        return actual_ante
+
+    def _assert_pot_consistency(self):
+        total_contrib = sum(p.total_contributed for p in self.players)
+        if self.pot != total_contrib:
+            print(f"[INVARIANT VIOLATION] Pot ({self.pot}) != sum of player.total_contributed ({total_contrib})")
+            for p in self.players:
+                print(f"    {p.name}: total_contributed={p.total_contributed}, current_bet={p.current_bet}, stack={p.stack}")
+            raise RuntimeError("Pot and player contributions are out of sync!")
     PHASES = ["preflop", "flop", "turn", "river", "showdown"]
 
     def __init__(self, players, starting_stack=1000, small_blind=10, big_blind=20,
-                 ante=0, game_mode=GameMode.AI_VS_AI, human_action_callback=None):
+                 ante=0, game_mode=GameMode.AI_VS_AI, human_action_callback=None, table_id=None):
         if len(players) < 2:
             raise ValueError("Need at least two players to start the game.")
         if ante < 0:
@@ -27,6 +49,7 @@ class PokerGame:
         self.pot = 0
         self.current_bet = 0
         self.active_players = []  # Players still in hand (not folded)
+        self.table_id = table_id  # For multi-table debug output
         self.dealer_position = 0
         self.current_player_idx = None  # Index of player to act
         self.phase_idx = 0  # Index in PHASES
@@ -38,6 +61,13 @@ class PokerGame:
         self.hands_played = 0  # Track number of hands played
 
     def reset_for_new_hand(self, deck=None, is_first_hand=True):
+        # Extra debug: print player bets and pot before resetting for new hand
+        print(f"(Before reset_for_new_hand) Table {getattr(self, 'table_id', '?')}: Player bets and pot before reset:")
+        for player in self.players:
+            print(f"    {player.name}.current_bet = {player.current_bet}")
+        print(f"    self.current_bet = {self.current_bet}")
+        print(f"    self.pot = {self.pot}")
+
         # Rotate dealer position for new hand (except first hand of game)
         if not is_first_hand:
             self.rotate_dealer()
@@ -57,18 +87,39 @@ class PokerGame:
         self.bb_acted_preflop = False
         self.players_to_act = []
 
-        # Reset player states
+
+        # Extra debug: print before resetting player states
+        print(f"(Resetting player states) Table {getattr(self, 'table_id', '?')}")
+        for player in self.players:
+            print(f"    Before reset: {player.name}.current_bet = {player.current_bet}")
+
+        # Reset player states (including total_contributed!)
         for player in self.players:
             player.current_bet = 0
+            player.total_contributed = 0
             player.hole_cards = []
             player.in_hand = True
             player.all_in = False
 
+        # Extra debug: print after resetting player states
+        print(f"(After resetting player states) Table {getattr(self, 'table_id', '?')}")
+        for player in self.players:
+            print(f"    After reset: {player.name}.current_bet = {player.current_bet}")
+
+
         self.players_who_posted_blinds = set()
+
+        # Extra debug: print before posting blinds
+        print(f"(Before post_blinds) Table {getattr(self, 'table_id', '?')}: Player bets and pot before posting blinds:")
+        for player in self.players:
+            print(f"    {player.name}.current_bet = {player.current_bet}")
+        print(f"    self.current_bet = {self.current_bet}")
+        print(f"    self.pot = {self.pot}")
+
         self.post_blinds()
 
         # [DEBUG] Print all player bets, current_bet, and pot after hand setup
-        print('[DEBUG] After hand setup:')
+        print(f"TABLE {getattr(self, 'table_id', '?')} After hand setup:")
         for player in self.players:
             print(f"    {player.name}.current_bet = {player.current_bet}")
         print(f"    self.current_bet = {self.current_bet}")
@@ -128,79 +179,70 @@ class PokerGame:
                 break
 
     def post_blinds(self):
+        n = len(self.players)
+        dealer_pos = self.dealer_position
         active_indices = [i for i, p in enumerate(self.players) if p.stack > 0]
         num_active = len(active_indices)
         if num_active < 2:
             raise RuntimeError("Not enough players with chips to continue.")
 
-        dealer_pos = self.dealer_position
-
+        # --- Assign SB and BB correctly for heads-up and 3+ players ---
         if num_active == 2:
             # Heads-up: dealer is SB, next is BB
-            dealer_pos = self.dealer_position
-            sb_idx = active_indices[0] if active_indices[0] == dealer_pos else active_indices[1]
-            bb_idx = active_indices[1] if active_indices[0] == dealer_pos else active_indices[0]
+            sb_idx = dealer_pos if self.players[dealer_pos].stack > 0 else active_indices[0]
+            bb_idx = active_indices[0] if active_indices[1] == dealer_pos else active_indices[1]
         else:
-            # More than 2: SB is next active after dealer, BB is next after SB
-            dealer_pos = self.dealer_position
+            # 3+ players: SB is first with chips after dealer, BB is next with chips after SB
             sb_idx = None
             bb_idx = None
-            for offset in range(1, len(self.players) + 1):
-                idx = (dealer_pos + offset) % len(self.players)
+            for offset in range(1, n+1):
+                idx = (dealer_pos + offset) % n
                 if self.players[idx].stack > 0:
                     if sb_idx is None:
                         sb_idx = idx
                     elif bb_idx is None:
                         bb_idx = idx
                         break
-
         sb_player = self.players[sb_idx]
         bb_player = self.players[bb_idx]
 
-        # Post antes first (BB pays total ante equal to big blind amount)
-        total_ante = 0
+        # --- Post ante if needed (BB pays total ante = BB amount) ---
         if self.ante > 0:
-            # In modern tournaments, total ante often equals the big blind
-            # BB pays the total ante for the entire table
-            total_ante = self.big_blind  # Total ante = BB amount
-            
+            total_ante = self.big_blind
             ante_paid = min(bb_player.stack, total_ante)
             if ante_paid > 0:
-                bb_player.post_ante(ante_paid, suppress_log=True)
-                self.pot += ante_paid
+                self.collect_ante(bb_player, ante_paid, suppress_log=True)
                 print(f"[DEBUG] {bb_player.name} posts ante of {ante_paid} (total ante = BB). Remaining stack: {bb_player.stack}")
 
-        # Post small blind
+        # --- Post small blind first ---
         sb_amount = min(sb_player.stack, self.small_blind)
-        sb_player.bet_chips(sb_amount, suppress_log=True)
-        print(f"[DEBUG] {sb_player.name} posts small blind of {sb_amount}. Remaining stack: {sb_player.stack}")
-        self.pot += sb_amount
+        if sb_amount > 0:
+            self.collect_bet(sb_player, sb_amount, suppress_log=True)
+            print(f"[DEBUG] {sb_player.name} posts small blind of {sb_amount}. Remaining stack: {sb_player.stack}")
 
-        # Post big blind
+        # --- Post big blind ---
         bb_amount = min(bb_player.stack, self.big_blind)
-        bb_player.bet_chips(bb_amount, suppress_log=True)
-        print(f"[DEBUG] {bb_player.name} posts big blind of {bb_amount}. Remaining stack: {bb_player.stack}")
-        self.pot += bb_amount
+        if bb_amount > 0:
+            self.collect_bet(bb_player, bb_amount, suppress_log=True)
+            print(f"[DEBUG] {bb_player.name} posts big blind of {bb_amount}. Remaining stack: {bb_player.stack}")
 
-        print(f"[DEBUG post_blinds] Pot after blinds and antes: {self.pot}, SB stack: {sb_player.stack}, BB stack: {bb_player.stack}")
-
+        # --- Set current_bet to the actual BB posted ---
         self.current_bet = bb_amount
         self.last_raise_amount = bb_amount
 
-        # Validate state after posting blinds
-        self._validate_state_consistency("after posting blinds")
-
-        # Note: current_bet was already updated by bet_chips() calls above
-        # No need to add again as bet_chips() already handled it
-
+        # --- Track who posted blinds ---
         self.players_who_posted_blinds = {sb_player.name, bb_player.name}
 
-        # [DEBUG] Print all player bets, current_bet, and pot after posting blinds
-        print('[DEBUG] After posting blinds:')
+        # --- Debug output ---
+        print(f"[DEBUG post_blinds] Pot after blinds and antes: {self.pot}, SB stack: {sb_player.stack}, BB stack: {bb_player.stack}")
+        print(f"TABLE {getattr(self, 'table_id', '?')} After posting blinds:")
         for player in self.players:
             print(f"    {player.name}.current_bet = {player.current_bet}")
         print(f"    self.current_bet = {self.current_bet}")
         print(f"    self.pot = {self.pot}")
+
+        # --- Validate state after posting blinds ---
+        self._validate_state_consistency("after posting blinds")
 
     def deal_hole_cards(self):
         if self.deck is None:
@@ -248,10 +290,11 @@ class PokerGame:
         total_player_bets = sum(p.current_bet for p in self.players)
         
         if inconsistencies:
-            print(f"[WARNING] State inconsistency detected in {context}:")
+            print(f"[WARNING] Table {getattr(self, 'table_id', '?')} State inconsistency detected in {context}:")
             for issue in inconsistencies:
                 print(f"  - {issue}")
             print(f"  - Total player bets: {total_player_bets}, Game pot: {self.pot}")
+            # sys.exit(1) # aisa todo
             return False
         return True
     
@@ -706,8 +749,7 @@ class PokerGame:
             raise ActionValidationError(str(e))
 
         call_amount = min(player.stack, to_call)
-        player.bet_chips(call_amount)
-        self.pot += call_amount
+        self.collect_bet(player, call_amount)
 
         print(f"[DEBUG handle_call] Pot after call: {self.pot}, {player.name} stack: {player.stack}, all_in: {player.all_in}")
 
@@ -751,8 +793,7 @@ class PokerGame:
             raise ActionValidationError("Player cannot raise more than their stack.")
 
         # Use bet_chips for logging and consistency
-        player.bet_chips(raise_amount, suppress_log=True)
-        self.pot += raise_amount
+        self.collect_bet(player, raise_amount, suppress_log=True)
 
         if player.stack == 0:
             player.all_in = True
@@ -798,7 +839,7 @@ class PokerGame:
         bet_levels = sorted(set([amt for amt in contributions.values() if amt > 0]))
         
         if not bet_levels:
-            print("[DEBUG] No contributions found for side pot calculation")
+            print("[SHOWDOWN] No contributions found for side pot calculation")
             return
         
         # Build side pots correctly
@@ -817,7 +858,7 @@ class PokerGame:
                     "amount": pot_amount,
                     "players": eligible_players.copy()
                 })
-                print(f"[DEBUG] Side pot {len(pots)}: {pot_amount} chips, eligible players: {[p.name for p in eligible_players]}")
+                print(f"[SHOWDOWN] Side pot {len(pots)}: {pot_amount} chips, eligible players: {[p.name for p in eligible_players]}")
             
             # Remove players who are maxed out at this level
             active_players = [p for p in active_players if contributions[p] > level]
@@ -826,11 +867,12 @@ class PokerGame:
         total_pot = sum(pot["amount"] for pot in pots)
         if total_pot != self.pot:
             print(f"[WARNING] Pot mismatch: calculated {total_pot}, actual {self.pot}")
-            print(f"[DEBUG] Player contributions: {contributions}")
-            print(f"[DEBUG] Side pots: {pots}")
+            print(f"[SHOWDOWN] Player contributions: {contributions}")
+            print(f"[SHOWDOWN] Side pots: {pots}")
+            # sys.exit(1) # aisa todo
             # Try to fix the mismatch by using the calculated total
             if abs(total_pot - self.pot) <= len(self.players):  # Small discrepancy, likely rounding
-                print(f"[DEBUG] Adjusting pot from {self.pot} to calculated {total_pot}")
+                print(f"[SHOWDOWN] Adjusting pot from {self.pot} to calculated {total_pot}")
                 self.pot = total_pot
 
         hand_ranks = {}

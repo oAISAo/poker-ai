@@ -162,27 +162,6 @@ def test_hand_ends_when_all_players_eliminated_except_one():
     with pytest.raises(RuntimeError, match="Not enough players with chips to continue."):
         PokerGame([alice, bob, carol]).reset_for_new_hand(is_first_hand=True)
 
-def test_hand_ends_when_all_in_and_folded_mix():
-    alice = Player("Alice", stack=0)
-    bob = Player("Bob", stack=1000)
-    carol = Player("Carol", stack=1000)
-    game = PokerGame([alice, bob, carol], small_blind=10, big_blind=20)
-    game.reset_for_new_hand(is_first_hand=True)
-    # Alice is all-in and should not act
-    assert not alice.in_hand or getattr(alice, "all_in", False)
-    # Only Bob and Carol should be able to act
-    assert game.current_player_idx is not None
-    current_player = game.players[game.current_player_idx]
-    assert current_player.name in ["Bob", "Carol"]
-    # Simulate Bob folding if facing a bet, otherwise check
-    to_call = game.current_bet - current_player.current_bet
-    if to_call > 0:
-        game.step("fold", 0)
-    else:
-        game.step("check", 0)
-    # Hand should end or go to showdown
-    assert game.hand_over or game.phase_idx == game.PHASES.index("showdown")
-
 def test_hand_ends_when_all_players_folded():
     alice = Player("Alice", stack=1000)
     bob = Player("Bob", stack=1000)

@@ -1,3 +1,4 @@
+import sys
 import gymnasium as gym
 import numpy as np
 from typing import Dict, List, Optional, Tuple
@@ -18,7 +19,9 @@ class Table:
         self.table_id = table_id
         self.players = players
         self.game = PokerGame(players, starting_stack=starting_stack, 
-                            small_blind=small_blind, big_blind=big_blind, ante=ante)
+                            small_blind=small_blind, big_blind=big_blind, ante=ante, table_id=table_id)
+        # Propagate table_id to PokerGame for debug prints
+        self.game.table_id = table_id
         self.hands_played = 0
         self.is_active = len(players) >= 2
         self._last_elimination_signature: Optional[Tuple[str, ...]] = None
@@ -34,23 +37,37 @@ class Table:
             # Update the game's player list
             self.game.players = self.players
             self.is_active = len(self.players) >= 2
+            # Invariant check
+            if self.players is not self.game.players:
+                print(f"[INVARIANT WARNING] Table {self.table_id}: self.players is not self.game.players after remove_player")
             return True
         return False
     
     def add_player(self, player: Player, seat_position: Optional[int] = None, emergency: bool = False) -> bool:
-        """Add a player to the table at specified seat or next available."""
+        """Add a player to the table at specified seat or next available. Resets player state for new table."""
+        # Reset player state when moving to a new table
+        player.current_bet = 0
+        player.in_hand = True
+        player.all_in = False
+        player.hole_cards = []
+        # Optionally reset any other per-hand state here
         if not emergency and len(self.players) >= 9:  # Max 9 players per table
             return False
-        
         if seat_position is not None and seat_position < len(self.players):
             self.players.insert(seat_position, player)
         else:
             self.players.append(player)
-        
         # Update the game's player list
         self.game.players = self.players
         self.is_active = len(self.players) >= 2
+        # Invariant check
+        if self.players is not self.game.players:
+            print(f"[INVARIANT WARNING] Table {self.table_id}: self.players is not self.game.players after add_player")
         return True
+    def check_player_list_invariant(self, context=""):
+        """Check that self.players is self.game.players"""
+        if self.players is not self.game.players:
+            print(f"[INVARIANT WARNING] Table {self.table_id}: self.players is not self.game.players {context}")
 
 class MultiTableTournamentEnv(gym.Env):
     """
@@ -269,27 +286,31 @@ class MultiTableTournamentEnv(gym.Env):
         Handles multiple players needed/given.
         """
 
-        print(f"[DEBUG] Entered balance_table for table_id: {table_id}")
+        print(f"[BALANCE_TABLE] Entered balance_table for table_id: {table_id}")
         table = self.tables.get(table_id)
+        # Log all table player counts before balancing
+        print("[BALANCE_TABLE] Table player counts before balancing:")
+        for tid, t in self.tables.items():
+            print(f"  Table {tid}: {len(t.players)} players, active: {t.is_active}, in_hand: {[p.in_hand for p in t.players]}")
         # Never forcibly end a hand due to eliminations; wait for hand to finish naturally
         # If table is in a hand, skip balancing until hand is over
         if not table or not table.is_active:
-            print(f"[DEBUG] Table {table_id} is not active; skipping balancing.")
+            print(f"[BALANCE_TABLE] Table {table_id} is not active; skipping balancing.")
             return
         if not table.game.hand_over:
-            print(f"[DEBUG] Table {table_id} is still in a hand; skipping balancing")
+            print(f"[BALANCE_TABLE] Table {table_id} is still in a hand; skipping balancing")
             return
 
         current = table.get_active_player_count()
         if current < self.min_players_per_table:
-            print(f"[DEBUG] Table {table_id} breaking: only {current} active players.")
+            print(f"[BALANCE_TABLE] Table {table_id} breaking: only {current} active players.")
             self._break_table(table)
-            print(f"[DEBUG] Table {table_id} deactivated after breaking.")
+            print(f"[BALANCE_TABLE] Table {table_id} deactivated after breaking.")
             return
 
         active_tables = [t for t in self.tables.values() if t.is_active and t.get_active_player_count() > 0]
         if len(active_tables) <= 1:
-            print(f"[DEBUG] Only one active table; no balancing needed.")
+            print(f"[BALANCE_TABLE] Only one active table; no balancing needed.")
             return
 
         # Calculate ideal player count per table
@@ -304,16 +325,20 @@ class MultiTableTournamentEnv(gym.Env):
         table_ids_sorted = sorted(table_map.keys())
         target_map = {tid: targets[i] for i, tid in enumerate(table_ids_sorted)}
 
+        # Log targets
+        print(f"[BALANCE_TABLE] Table targets: {target_map}")
+
         # How many players does this table need/give?
         target = target_map[table_id]
+        print(f"[BALANCE_TABLE] Table {table_id} has {current} players, target {target}")
         if current == target:
-            print(f"[DEBUG] Table {table_id} already balanced ({current} players).")
+            print(f"[BALANCE_TABLE] Table {table_id} already balanced ({current} players).")
             return
         elif current < target:
             # If table is below min_players_per_table, break and deactivate it
-            print(f"[DEBUG] Table {table_id} is below min_players_per_table after breaking; breaking and deactivating.")
+            print(f"[BALANCE_TABLE] Table {table_id} is below min_players_per_table after breaking; breaking and deactivating.")
             self._break_table(table)
-            print(f"[DEBUG] Table {table_id} deactivated after breaking (balancing phase).")
+            print(f"[BALANCE_TABLE] Table {table_id} deactivated after breaking (balancing phase).")
             # Ensure at least one table is active and has a valid hand started
             active_tables = [t for t in self.tables.values() if t.is_active and t.get_active_player_count() >= 2]
             if active_tables:
@@ -328,13 +353,13 @@ class MultiTableTournamentEnv(gym.Env):
                         active_tables[0].game.big_blind = bb
                         active_tables[0].game.ante = ante
                         active_tables[0].game.reset_for_new_hand(is_first_hand=False)
-                        print(f"[DEBUG] Started new hand at table {active_tables[0].table_id} after breaking.")
+                        print(f"[BALANCE_TABLE] Started new hand at table {active_tables[0].table_id} after breaking.")
                     except Exception as e:
-                        print(f"[DEBUG] Error resetting hand after breaking: {e}")
+                        print(f"[BALANCE_TABLE] Error resetting hand after breaking: {e}")
             return
         else:
             players_to_give = current - target
-            print(f"[DEBUG] Table {table_id} has {players_to_give} surplus player(s) (target {target}).")
+            print(f"[BALANCE_TABLE] Table {table_id} has {players_to_give} surplus player(s) (target {target}).")
             # Find tables needing players
             for receiver_id in table_ids_sorted:
                 if receiver_id == table_id:
@@ -348,6 +373,7 @@ class MultiTableTournamentEnv(gym.Env):
                     if not moveable:
                         break
                     player_to_move = moveable[0]
+                    print(f"[BALANCE_TABLE] Moving {player_to_move.name} from table {table_id} to table {receiver_id}")
                     table.remove_player(player_to_move)
                     receiver_table.add_player(player_to_move)
                     # Player moved mid-hand joins next hand only
@@ -355,13 +381,19 @@ class MultiTableTournamentEnv(gym.Env):
                         player_to_move.in_hand = True
                     else:
                         player_to_move.in_hand = False
-                    print(f"[DEBUG] Moved {player_to_move.name} from table {table_id} to table {receiver_id}")
+                    print(f"[BALANCE_TABLE] Moved {player_to_move.name} from table {table_id} to table {receiver_id}")
+                    # Invariant check after move
+                    table.check_player_list_invariant(context=f"after removing {player_to_move.name}")
+                    receiver_table.check_player_list_invariant(context=f"after adding {player_to_move.name}")
                     need -= 1
                     players_to_give -= 1
         # Fix game state for all affected tables
+        print("[BALANCE_TABLE] Table player counts after balancing:")
+        for tid, t in self.tables.items():
+            print(f"  Table {tid}: {len(t.players)} players, active: {t.is_active}, in_hand: {[p.in_hand for p in t.players]}")
         for t in active_tables:
             self._fix_game_state_after_eliminations(t)
-        print(f"[DEBUG] Table {table_id} balancing complete.")
+        print(f"[BALANCE_TABLE] Table {table_id} balancing complete.")
     
     def _fix_game_state_after_eliminations(self, table: Table):
         """Fix game state after manual eliminations (e.g., setting stack=0)"""
@@ -451,7 +483,7 @@ class MultiTableTournamentEnv(gym.Env):
         for player in active_players:
             # Find table with fewest players (allow going up to max+1 in emergency situations)
             target_table = min(available_tables, key=lambda t: len(t.players))
-            # Allow moving even if table is at max capacity (emergency table breaking)
+            # Remove from old table, then reset state before adding to new table (handled in add_player)
             table.remove_player(player)
             target_table.add_player(player, emergency=True)
             print(f"Player {player.name} moved from table {table.table_id} to {target_table.table_id}")
@@ -468,6 +500,7 @@ class MultiTableTournamentEnv(gym.Env):
         if moveable_players and len(target_table.players) < self.max_players_per_table:
             player_to_move = random.choice(moveable_players)
             source_table.remove_player(player_to_move)
+            # State reset now handled in add_player
             target_table.add_player(player_to_move)
             print(f"Player {player_to_move.name} moved from table {source_table.table_id} to {target_table.table_id}")
     
@@ -804,7 +837,8 @@ class MultiTableTournamentEnv(gym.Env):
                 
                 # Check for inconsistent state and fix it using the game's validation system
                 if not table.game._validate_state_consistency(f"before raise by {player.name}"):
-                    print(f"[WARNING] State inconsistency detected before raise - attempting fix...")
+                    print(f"[WARNING] Table {getattr(self, 'table_id', '?')} State inconsistency detected before raise - attempting fix...")
+                    # sys.exit(1) # aisa todo
                     table.game.fix_state_inconsistencies()
                     # Recalculate to_call after fixing state
                     to_call = max(0, table.game.current_bet - player.current_bet)
