@@ -30,14 +30,15 @@ def main():
         text = ' '.join(str(arg) for arg in args)
         # Only block the most spammy debug messages
         if any(spam in text for spam in [
-            '[DEBUG]', 'posts ante', 'posts small blind', 'posts big blind',
+            'posts ante', 'posts small blind', 'posts big blind',
             'was dealt:', 'Community cards dealt:', 'checks.', 'calls.', 'raises.', 'folds.',
             'Stack:', 'CurrentBet:', 'Pot:', 'ToCall:', 'RaiseTo:', 'Fixed game state',
             'Advancing to phase:', 'Removing', 'from players_to_act', 'handle_',
-            '[BALANCE_TABLE]', '--- Showdown ---', 'Blinds increased to',
+            '--- Showdown ---', 'Blinds increased to',
             'wins', 'chips from pot', 'SB stack:', 'BB stack:', 'Exiting step:',
             'Tournament initialized:', 'Using cpu device', 'Wrapping the env', 'Entering step:',
             '📂 Sharky', 'loaded from models', "==> ", "'s turn:", "Action=", 'bets ', 'raises to',
+            '[PLAYER bet_chips]','[DEBUG', '[BALANCE_TABLE]', '[INCONSISTENCY]', '[SHOWDOWN]', '[PLAYER', # aisa comment out when debugging
             'bet_chips', 'suppress_log'
         ]):
             return  # Block these

@@ -61,12 +61,20 @@ class PokerGame:
         self.hands_played = 0  # Track number of hands played
 
     def reset_for_new_hand(self, deck=None, is_first_hand=True):
+        # --- STACK SUM CONSISTENCY CHECK (before posting blinds for new hand) ---
+        expected_total = self.starting_stack * len(self.players)
+        actual_total = sum(p.stack for p in self.players)
+        if actual_total != expected_total:
+            print(f"[WARNING] [TABLE] Stack sum inconsistency detected before posting blinds: total player stack sum ({actual_total}) != expected ({expected_total}) [starting_stack={self.starting_stack}, num_players={len(self.players)}]")
+            for p in self.players:
+                print(f"    {p.name}: stack={p.stack}")
+            # sys.exit(1) # aisa todo
         # Extra debug: print player bets and pot before resetting for new hand
-        print(f"(Before reset_for_new_hand) Table {getattr(self, 'table_id', '?')}: Player bets and pot before reset:")
+        print(f"[INCONSISTENCY] (Before reset_for_new_hand) Table {getattr(self, 'table_id', '?')}: Player bets and pot before reset:")
         for player in self.players:
-            print(f"    {player.name}.current_bet = {player.current_bet}")
-        print(f"    self.current_bet = {self.current_bet}")
-        print(f"    self.pot = {self.pot}")
+            print(f"[INCONSISTENCY]    {player.name}.current_bet = {player.current_bet}")
+        print(f"[INCONSISTENCY]    self.current_bet = {self.current_bet}")
+        print(f"[INCONSISTENCY]    self.pot = {self.pot}")
 
         # Rotate dealer position for new hand (except first hand of game)
         if not is_first_hand:
@@ -89,9 +97,9 @@ class PokerGame:
 
 
         # Extra debug: print before resetting player states
-        print(f"(Resetting player states) Table {getattr(self, 'table_id', '?')}")
+        print(f"[INCONSISTENCY] (Resetting player states) Table {getattr(self, 'table_id', '?')}")
         for player in self.players:
-            print(f"    Before reset: {player.name}.current_bet = {player.current_bet}")
+            print(f"[INCONSISTENCY]     Before reset: {player.name}.current_bet = {player.current_bet}")
 
         # Reset player states (including total_contributed!)
         for player in self.players:
@@ -102,28 +110,28 @@ class PokerGame:
             player.all_in = False
 
         # Extra debug: print after resetting player states
-        print(f"(After resetting player states) Table {getattr(self, 'table_id', '?')}")
+        print(f"[INCONSISTENCY] (After resetting player states) Table {getattr(self, 'table_id', '?')}")
         for player in self.players:
-            print(f"    After reset: {player.name}.current_bet = {player.current_bet}")
+            print(f"[INCONSISTENCY]     After reset: {player.name}.current_bet = {player.current_bet}")
 
 
         self.players_who_posted_blinds = set()
 
         # Extra debug: print before posting blinds
-        print(f"(Before post_blinds) Table {getattr(self, 'table_id', '?')}: Player bets and pot before posting blinds:")
+        print(f"[INCONSISTENCY] (Before post_blinds) Table {getattr(self, 'table_id', '?')}: Player bets and pot before posting blinds:")
         for player in self.players:
-            print(f"    {player.name}.current_bet = {player.current_bet}")
-        print(f"    self.current_bet = {self.current_bet}")
-        print(f"    self.pot = {self.pot}")
+            print(f"[INCONSISTENCY]     {player.name}.current_bet = {player.current_bet}")
+        print(f"[INCONSISTENCY]     self.current_bet = {self.current_bet}")
+        print(f"[INCONSISTENCY]     self.pot = {self.pot}")
 
         self.post_blinds()
 
         # [DEBUG] Print all player bets, current_bet, and pot after hand setup
-        print(f"TABLE {getattr(self, 'table_id', '?')} After hand setup:")
+        print(f"[INCONSISTENCY] TABLE {getattr(self, 'table_id', '?')} After hand setup:")
         for player in self.players:
-            print(f"    {player.name}.current_bet = {player.current_bet}")
-        print(f"    self.current_bet = {self.current_bet}")
-        print(f"    self.pot = {self.pot}")
+            print(f"[INCONSISTENCY]    {player.name}.current_bet = {player.current_bet}")
+        print(f"[INCONSISTENCY]    self.current_bet = {self.current_bet}")
+        print(f"[INCONSISTENCY]    self.pot = {self.pot}")
 
         # --- Mark all-in and eliminated states after blinds ---
         for player in self.players:
@@ -207,39 +215,53 @@ class PokerGame:
         bb_player = self.players[bb_idx]
 
         # --- Post ante if needed (BB pays total ante = BB amount) ---
+        ante_paid = 0
         if self.ante > 0:
             total_ante = self.big_blind
             ante_paid = min(bb_player.stack, total_ante)
             if ante_paid > 0:
                 self.collect_ante(bb_player, ante_paid, suppress_log=True)
-                print(f"[DEBUG] {bb_player.name} posts ante of {ante_paid} (total ante = BB). Remaining stack: {bb_player.stack}")
+                print(f"[DEBUG] [ANTE] {bb_player.name} (BB) posts ante of {ante_paid} (total ante = BB). Remaining stack: {bb_player.stack}")
 
         # --- Post small blind first ---
         sb_amount = min(sb_player.stack, self.small_blind)
         if sb_amount > 0:
             self.collect_bet(sb_player, sb_amount, suppress_log=True)
-            print(f"[DEBUG] {sb_player.name} posts small blind of {sb_amount}. Remaining stack: {sb_player.stack}")
+            print(f"[DEBUG] [SB] {sb_player.name} posts small blind of {sb_amount}. Remaining stack: {sb_player.stack}")
+        else:
+            print(f"[DEBUG] [SB] {sb_player.name} could not post small blind (stack={sb_player.stack})")
 
         # --- Post big blind ---
         bb_amount = min(bb_player.stack, self.big_blind)
         if bb_amount > 0:
             self.collect_bet(bb_player, bb_amount, suppress_log=True)
-            print(f"[DEBUG] {bb_player.name} posts big blind of {bb_amount}. Remaining stack: {bb_player.stack}")
+            print(f"[DEBUG] [BB] {bb_player.name} posts big blind of {bb_amount}. Remaining stack: {bb_player.stack}")
+        else:
+            print(f"[DEBUG] [BB] {bb_player.name} could not post big blind (stack={bb_player.stack})")
 
-        # --- Set current_bet to the actual BB posted ---
-        self.current_bet = bb_amount
+        # --- Set last_raise_amount to the actual BB posted ---
         self.last_raise_amount = bb_amount
+
+        # --- Always set current_bet to the full BB amount, even if BB is all-in for less ---
+        self.current_bet = self.big_blind
+
+        # --- Defensive: If BB posted less than BB, print debug for side pot logic ---
+        if bb_amount < self.big_blind:
+            print(f"[DEBUG] BB {bb_player.name} is all-in for less than BB ({bb_amount} < {self.big_blind}); current_bet set to {self.big_blind} for side pot logic.")
+
+        # --- Pot already includes blinds and ante via collect_bet and collect_ante ---
+        # Do NOT overwrite pot here; it should include both blinds and ante.
 
         # --- Track who posted blinds ---
         self.players_who_posted_blinds = {sb_player.name, bb_player.name}
 
         # --- Debug output ---
-        print(f"[DEBUG post_blinds] Pot after blinds and antes: {self.pot}, SB stack: {sb_player.stack}, BB stack: {bb_player.stack}")
-        print(f"TABLE {getattr(self, 'table_id', '?')} After posting blinds:")
+        print(f"[DEBUG post_blinds] Pot after blinds and antes: {self.pot}, SB: {sb_player.name} (stack: {sb_player.stack}), BB: {bb_player.name} (stack: {bb_player.stack}), Ante posted: {ante_paid}")
+        print(f"[INCONSISTENCY] TABLE {getattr(self, 'table_id', '?')} After posting blinds:")
         for player in self.players:
-            print(f"    {player.name}.current_bet = {player.current_bet}")
-        print(f"    self.current_bet = {self.current_bet}")
-        print(f"    self.pot = {self.pot}")
+            print(f"[INCONSISTENCY]    {player.name}.current_bet = {player.current_bet}")
+        print(f"[INCONSISTENCY]    self.current_bet = {self.current_bet}")
+        print(f"[INCONSISTENCY]    self.pot = {self.pot}")
 
         # --- Validate state after posting blinds ---
         self._validate_state_consistency("after posting blinds")
@@ -283,8 +305,22 @@ class PokerGame:
         # Check 2: If game.current_bet > 0, at least one player should have that bet amount
         if self.current_bet > 0:
             max_player_bet = max((p.current_bet for p in self.players), default=0)
+            # Allow edge case: BB is all-in from antes/can't post full BB
             if max_player_bet != self.current_bet:
-                inconsistencies.append(f"game.current_bet ({self.current_bet}) != max player bet ({max_player_bet})")
+                bb_all_in_case = False
+                if hasattr(self, 'players_who_posted_blinds'):
+                    # Find the BB player - they should be in players_who_posted_blinds
+                    # and either have current_bet < current_bet (partial BB) or current_bet = 0 (all-in from ante)
+                    for p in self.players:
+                        if p.name in self.players_who_posted_blinds and p.stack == 0:
+                            # Player is all-in and was supposed to post BB
+                            # Check if they posted less than BB or nothing (all-in from antes)
+                            if p.current_bet < self.current_bet:
+                                bb_all_in_case = True
+                                print(f"[DEBUG] BB edge case: {p.name} all-in with {p.current_bet} bet, can't post full BB ({self.current_bet})")
+                                break
+                if not bb_all_in_case:
+                    inconsistencies.append(f"game.current_bet ({self.current_bet}) != max player bet ({max_player_bet})")
         
         # Check 3: Total player bets should match what we expect for pot calculation
         total_player_bets = sum(p.current_bet for p in self.players)
@@ -305,7 +341,8 @@ class PokerGame:
         """
         max_player_bet = max((p.current_bet for p in self.players), default=0)
         if self.current_bet != max_player_bet:
-            print(f"[DEBUG] Synchronizing game.current_bet from {self.current_bet} to {max_player_bet}")
+            print(f"[WARNING] SYNC NEEDED! Synchronizing game.current_bet from {self.current_bet} to {max_player_bet}")
+            # sys.exit(1) # aisa todo
             self.current_bet = max_player_bet
     
     def fix_state_inconsistencies(self):
@@ -313,7 +350,7 @@ class PokerGame:
         Public method to fix detected state inconsistencies.
         Can be called from tournament environments when inconsistencies are detected.
         """
-        print(f"[DEBUG] Attempting to fix state inconsistencies...")
+        print(f"[INCONSISTENCY] Attempting to fix state inconsistencies...")
         
         # First, identify the correct game.current_bet - use the original value as baseline
         # Don't synchronize upward if we have individual player bet inconsistencies
@@ -323,7 +360,7 @@ class PokerGame:
         fixed_players = []
         for player in self.players:
             if player.current_bet > original_game_bet:
-                print(f"[DEBUG] Reducing {player.name}.current_bet from {player.current_bet} to {original_game_bet}")
+                print(f"[INCONSISTENCY] Reducing {player.name}.current_bet from {player.current_bet} to {original_game_bet}")
                 # Calculate the difference to refund to stack
                 excess = player.current_bet - original_game_bet
                 player.current_bet = original_game_bet
@@ -336,17 +373,17 @@ class PokerGame:
 
         # Fix 3: Ensure pot matches sum of all player bets
         self.pot = sum(p.current_bet for p in self.players)
-        print(f"[DEBUG] Synchronized pot to sum of player bets: {self.pot}")
+        print(f"[INCONSISTENCY] Synchronized pot to sum of player bets: {self.pot}")
 
         if fixed_players:
-            print(f"[DEBUG] Fixed bet inconsistencies for players: {fixed_players}")
+            print(f"[INCONSISTENCY] Fixed bet inconsistencies for players: {fixed_players}")
 
         # Validate the fixes worked
         if self._validate_state_consistency("after fix_state_inconsistencies"):
-            print(f"[DEBUG] State inconsistencies successfully resolved")
+            print(f"[INCONSISTENCY] State inconsistencies successfully resolved")
             return True
         else:
-            print(f"[DEBUG] Unable to fully resolve state inconsistencies")
+            print(f"[INCONSISTENCY] Unable to fully resolve state inconsistencies")
             return False
 
     def step(self, action, raise_amount=0):
