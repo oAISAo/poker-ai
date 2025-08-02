@@ -24,21 +24,26 @@ class Player:
         self.hole_cards = cards
 
     def bet_chips(self, amount, suppress_log=False):
-        print(f"[DEBUG bet_chips] {self.name} called bet_chips({amount}, suppress_log={suppress_log})")
-        # traceback.print_stack(limit=5)
+        old_stack = self.stack
+        old_current_bet = self.current_bet
+        old_total_contributed = self.total_contributed
+        print(f"[PLAYER bet_chips] {self.name} called bet_chips({amount}, suppress_log={suppress_log})")
         actual_bet = min(self.stack, amount)
         self.stack -= actual_bet
         self.current_bet += actual_bet
         self.total_contributed += actual_bet  # Track total for side pots
         if self.stack == 0:
             self.all_in = True  # Player is all-in if no chips left
+        print(f"[PLAYER bet_chips] {self.name}: amount={amount}, stack: {old_stack}->{self.stack}, current_bet: {old_current_bet}->{self.current_bet}, total_contributed: {old_total_contributed}->{self.total_contributed}")
         if not suppress_log:
-            print(f"[DEBUG] {self.name} bets {actual_bet}. Remaining stack: {self.stack}")
+            print(f"[PLAYER] {self.name} bets {actual_bet}. Remaining stack: {self.stack}")
         return actual_bet
 
     def post_ante(self, amount, suppress_log=False):
         """Post ante - doesn't count toward current_bet, only total_contributed and pot"""
-        print(f"[DEBUG post_ante] {self.name} called post_ante({amount}, suppress_log={suppress_log})")
+        old_stack = self.stack
+        old_total_contributed = self.total_contributed
+        print(f"[PLAYER post_ante] {self.name} called post_ante({amount}, suppress_log={suppress_log})")
         actual_ante = min(self.stack, amount)
         self.stack -= actual_ante
         # NOTE: Ante does NOT count toward current_bet in Texas Hold'em
@@ -46,13 +51,14 @@ class Player:
         self.total_contributed += actual_ante  # Track total for side pots
         if self.stack == 0:
             self.all_in = True  # Player is all-in if no chips left
+        print(f"[PLAYER post_ante] {self.name}: amount={amount}, stack: {old_stack}->{self.stack}, total_contributed: {old_total_contributed}->{self.total_contributed}")
         if not suppress_log:
-            print(f"[DEBUG] {self.name} posts ante of {actual_ante}. Remaining stack: {self.stack}")
+            print(f"[PLAYER] {self.name} posts ante of {actual_ante}. Remaining stack: {self.stack}")
         return actual_ante
 
     def fold(self):
         self.in_hand = False
-        print(f"[DEBUG] {self.name} folds.")
+        print(f"[PLAYER] {self.name} folds.")
 
     def reset_for_new_hand(self):
         self.hole_cards = []

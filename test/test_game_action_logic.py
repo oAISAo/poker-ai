@@ -6,14 +6,36 @@ from engine.action_validation import validate_raise, validate_call, ActionValida
 def setup_game():
     alice = Player("Alice")
     bob = Player("Bob")
-    game = PokerGame([alice, bob], big_blind=50)
+    game = PokerGame([alice, bob], small_blind=20, big_blind=40)
     alice.stack = 1000
     bob.stack = 1000
-    game.current_player_idx = 0
-    game.current_bet = 50
-    game.last_raise_amount = 50
-    game.pot = 150
+    # Post blinds: Alice is SB, Bob is BB
+    game.collect_bet(alice, 20, suppress_log=True)
+    game.collect_bet(bob, 40, suppress_log=True)
+    game.current_player_idx = 0  # Alice acts first after blinds
+    game.current_bet = 40
+    game.last_raise_amount = 40
     return game, alice, bob
+
+# --- 3-player BB ante setup and tests ---
+def setup_game_3p_bb_ante():
+    # Dealer = Alice (pos 0), SB = Bob (pos 1), BB = Carol (pos 2)
+    alice = Player("Alice")
+    bob = Player("Bob")
+    carol = Player("Carol")
+    game = PokerGame([alice, bob, carol], small_blind=30, big_blind=60, ante=1)
+    alice.stack = 1000
+    bob.stack = 1000
+    carol.stack = 1000
+    # Post BB ante: only Carol (BB) posts, amount = big blind
+    game.collect_ante(carol, 60, suppress_log=True)
+    # Post blinds
+    game.collect_bet(bob, 30, suppress_log=True)   # SB
+    game.collect_bet(carol, 60, suppress_log=True) # BB
+    game.current_player_idx = 0  # Alice (UTG) acts first
+    game.current_bet = 60
+    game.last_raise_amount = 60
+    return game, alice, bob, carol
 
 # --- handle_fold tests ---
 
@@ -81,7 +103,7 @@ def test_check_when_to_call_zero():
     to_call = game.current_bet - alice.current_bet
     result = game.handle_check(alice, to_call)
     assert result["can_check"]
-    assert result["pot"] == 150  # pot unchanged
+    assert result["pot"] == 60  # pot unchanged
     assert result["current_bet"] == 50 or result["current_bet"] == 0  # depending on your setup
 
 def test_check_when_to_call_positive_fails():
@@ -114,12 +136,12 @@ def test_check_with_non_integer_to_call_fails():
 
 def test_call_with_enough_chips():
     game, alice, _ = setup_game()
-    # Alice needs to call 50, has 1000
+    # Alice needs to call 20, has 980
     to_call = game.current_bet - alice.current_bet
     result = game.handle_call(alice, to_call)
-    assert alice.stack == 950
-    assert alice.current_bet == 50
-    assert result["call_amount"] == 50
+    assert alice.stack == 960
+    assert alice.current_bet == 40
+    assert result["call_amount"] == 20
     assert not result["is_all_in"]
 
 def test_call_all_in_for_less():
@@ -136,13 +158,13 @@ def test_call_all_in_for_less():
 
 def test_call_with_exact_stack():
     game, alice, _ = setup_game()
-    alice.stack = 50
+    alice.stack = 20
     # Alice needs to call 50, has exactly 50 (all-in, but not "for less")
     to_call = game.current_bet - alice.current_bet
     result = game.handle_call(alice, to_call)
     assert alice.stack == 0
-    assert alice.current_bet == 50
-    assert result["call_amount"] == 50
+    assert alice.current_bet == 40
+    assert result["call_amount"] == 20
     assert result["is_all_in"]
 
 def test_call_with_zero_stack_fails():
@@ -180,33 +202,32 @@ def test_call_when_to_call_zero_is_check_not_call():
 def test_valid_raise():
     game, alice, _ = setup_game()
     to_call = game.current_bet - alice.current_bet
-    result = game.handle_raise(alice, raise_to=150, to_call=to_call)  # 50 to call + 100 raise
-    assert alice.stack == 850
-    assert alice.current_bet == 150
-    assert game.current_bet == 150
-    assert game.last_raise_amount == 100
-    assert game.pot == 300
-    assert result["raise_to"] == 150
+    result = game.handle_raise(alice, raise_to=120, to_call=to_call)
+    assert alice.stack == 880
+    assert alice.current_bet == 120
+    assert game.current_bet == 120
+    assert game.last_raise_amount == 80
+    assert game.pot == 160
+    assert result["raise_to"] == 120
     assert not result["is_all_in"]
 
 def test_raise_all_in():
     game, alice, _ = setup_game()
-    alice.stack = 200
-    # Alice's current_bet is 0, so she can only raise_to 200 (all-in)
+    alice.stack = 40
     to_call = game.current_bet - alice.current_bet
     result = game.handle_raise(alice, raise_to=alice.current_bet + alice.stack, to_call=to_call)
     assert alice.stack == 0
-    assert alice.current_bet == 200
+    assert alice.current_bet == 60
     assert result["is_all_in"]
 
 def test_minimum_raise():
     game, alice, _ = setup_game()
     to_call = game.current_bet - alice.current_bet
-    result = game.handle_raise(alice, raise_to=100, to_call=to_call)  # 50 to call + 50 min raise
+    result = game.handle_raise(alice, raise_to=100, to_call=to_call)
     assert alice.stack == 900
     assert alice.current_bet == 100
     assert game.current_bet == 100
-    assert game.last_raise_amount == 50
+    assert game.last_raise_amount == 60
     assert not result["is_all_in"]
 
 def test_raise_too_small_raises_error():
@@ -258,3 +279,67 @@ def test_handle_raise_returns_structured_result():
     assert isinstance(result, dict)
     assert "raise_to" in result
     assert "is_all_in" in result
+
+def test_bb_ante_posting():
+    game, alice, bob, carol = setup_game_3p_bb_ante()
+    # Only Carol (BB) should have posted ante
+    assert alice.total_contributed == 0
+    assert bob.total_contributed == 30
+    assert carol.total_contributed == 60 + 60  # ante + BB
+    assert game.pot == 30 + 60 + 60
+    assert carol.stack == 1000 - 60 - 60
+
+def test_3p_bb_ante_action_flow():
+    game, alice, bob, carol = setup_game_3p_bb_ante()
+    # Alice (UTG) calls 60
+    to_call = game.current_bet - alice.current_bet
+    result = game.handle_call(alice, to_call)
+    assert alice.current_bet == 60
+    # Bob (SB) calls 30
+    to_call = game.current_bet - bob.current_bet
+    result = game.handle_call(bob, to_call)
+    assert bob.current_bet == 60
+    # Carol (BB) checks
+    to_call = game.current_bet - carol.current_bet
+    result = game.handle_check(carol, to_call)
+    assert result["can_check"]
+
+def test_3p_bb_ante_raise_and_fold():
+    game, alice, bob, carol = setup_game_3p_bb_ante()
+    # Alice (UTG) raises to 180
+    to_call = game.current_bet - alice.current_bet
+    result = game.handle_raise(alice, raise_to=180, to_call=to_call)
+    assert alice.current_bet == 180
+    # Bob (SB) folds
+    to_call = game.current_bet - bob.current_bet
+    result = game.handle_fold(bob, to_call)
+    assert not bob.in_hand
+    # Carol (BB) calls 120
+    to_call = game.current_bet - carol.current_bet
+    result = game.handle_call(carol, to_call)
+    assert carol.current_bet == 180
+
+def test_3p_bb_ante_bb_stack_less_than_ante():
+    # Carol (BB) has less than BB for ante
+    alice = Player("Alice")
+    bob = Player("Bob")
+    carol = Player("Carol")
+    game = PokerGame([alice, bob, carol], small_blind=30, big_blind=60, ante=1)
+    alice.stack = 1000
+    bob.stack = 1000
+    carol.stack = 50  # Less than BB for ante
+    # Post BB ante: Carol posts all-in (50)
+    game.collect_ante(carol, 50, suppress_log=True)
+    # Post blinds
+    game.collect_bet(bob, 30, suppress_log=True)
+    game.collect_bet(carol, 0, suppress_log=True)  # Can't post BB
+    game.current_player_idx = 0
+    game.current_bet = 0
+    game.last_raise_amount = 60
+    # Carol should be all-in after ante, not able to post BB
+    assert carol.stack == 0
+    assert carol.all_in
+    assert carol.current_bet == 0
+    assert carol.total_contributed == 50
+    # Pot should be sum of all contributions
+    assert game.pot == 30 + 50

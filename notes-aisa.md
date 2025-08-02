@@ -62,6 +62,7 @@ python train_sharky_vs_rule_based.py 1.0.1 --timesteps 50000 --from models/shark
 python train_sharky_vs_rule_based.py 1.0.1 --timesteps 25000 --from models/sharky_evolution/sharky_1.0.0.zip
 python train_sharky_vs_rule_based.py 1.0.1 --timesteps 10000 --from models/sharky_evolution/sharky_1.0.0.zip
 python train_sharky_vs_rule_based.py 1.0.1 --timesteps 1000 --from models/sharky_evolution/sharky_1.0.0.zip
+python train_sharky_vs_rule_based.py 1.0.1 --timesteps 10 --from models/sharky_evolution/sharky_1.0.0.zip
 
 
 check for errors:

@@ -34,7 +34,7 @@ def main():
             'was dealt:', 'Community cards dealt:', 'checks.', 'calls.', 'raises.', 'folds.',
             'Stack:', 'CurrentBet:', 'Pot:', 'ToCall:', 'RaiseTo:', 'Fixed game state',
             'Advancing to phase:', 'Removing', 'from players_to_act', 'handle_',
-            '[WARNING] Pot mismatch:', '--- Showdown ---', 'Blinds increased to',
+            '[BALANCE_TABLE]', '--- Showdown ---', 'Blinds increased to',
             'wins', 'chips from pot', 'SB stack:', 'BB stack:', 'Exiting step:',
             'Tournament initialized:', 'Using cpu device', 'Wrapping the env', 'Entering step:',
             '📂 Sharky', 'loaded from models', "==> ", "'s turn:", "Action=", 'bets ', 'raises to',
