@@ -188,6 +188,14 @@ class MultiTableTournamentEnv(gym.Env):
         
         # Track previous stacks for reward calculation
         self.prev_stacks: Dict[str, int] = {}
+        
+        # Action context tracking for advanced rewards
+        self._last_action_context: Optional[Dict] = None
+        self._last_action_type: Optional[str] = None
+        
+        # Opponent read tracking for bluff catching and hero calls
+        self._hand_action_history: Dict[str, List[Dict]] = {}  # Track actions per hand for read analysis
+        self._showdown_results: List[Dict] = []  # Store showdown results for read validation
     
     def _validate_blind_schedule(self):
         """Validate and normalize blind schedule to enforce consistent ante logic"""
@@ -656,39 +664,347 @@ class MultiTableTournamentEnv(gym.Env):
         return False
     
     def _calculate_reward(self, player, prev_stack):
-        """Calculate comprehensive tournament reward"""
-        # 1. Immediate stack change (small weight for short-term feedback)
-        stack_change = (player.stack - prev_stack) * 0.1
+        """Calculate comprehensive tournament reward with advanced poker strategy incentives"""
         
-        # 2. Placement reward (only when eliminated or tournament ends)
+        # Initialize reward components
+        stack_change_reward = 0
         placement_reward = 0
+        chip_preservation_reward = 0
+        tactical_reward = 0
+        aggression_reward = 0
+        survival_bonus = 0
+        progression_bonus = 0
+        
+        # 1. STACK CHANGE ANALYSIS with chip preservation focus
+        stack_change = player.stack - prev_stack
+        
+        if stack_change != 0:
+            # Non-linear reward for stack changes - emphasize preservation and growth
+            relative_change = stack_change / max(prev_stack, 1)  # Avoid division by zero
+            
+            if stack_change > 0:
+                # Reward stack growth with increased caps for big wins
+                stack_change_reward = min(stack_change * 0.3, 75)  # Increased cap from 50 to 75
+                
+                # Bonus for significant relative gains
+                if relative_change > 0.2:  # 20%+ increase
+                    chip_preservation_reward += 20
+                elif relative_change > 0.1:  # 10%+ increase
+                    chip_preservation_reward += 10
+            else:
+                # Reduced penalties for early tournament (before final 2 tables)
+                remaining_players = len([p for p in self.all_players if p.stack > 0])
+                penalty_multiplier = 1.0 if remaining_players <= 18 else 0.6  # Reduced early penalties
+                
+                loss_severity = abs(relative_change)
+                if loss_severity > 0.5:  # Lost 50%+ of stack
+                    chip_preservation_reward = int(-75 * penalty_multiplier)  # Reduced from -100
+                elif loss_severity > 0.25:  # Lost 25%+ of stack
+                    chip_preservation_reward = int(-35 * penalty_multiplier)  # Reduced from -50
+                elif loss_severity > 0.1:  # Lost 10%+ of stack
+                    chip_preservation_reward = int(-15 * penalty_multiplier)  # Reduced from -20
+                else:
+                    chip_preservation_reward = stack_change * 0.2 * penalty_multiplier  # Scaled penalty
+        
+        # 2. PLACEMENT REWARDS with exponential scaling near the top
         if player.stack == 0 and prev_stack > 0:  # Just eliminated
-            elimination_position = len([p for p in self.all_players if p.stack == 0])  # Current elimination position
-            final_placement = self.total_players - elimination_position + 1  # Convert to final placement
-            placement_reward = self._get_placement_reward(final_placement)
-            # Note: Elimination announcement happens in _update_elimination_order(), not here
+            elimination_position = len([p for p in self.all_players if p.stack == 0])
+            final_placement = self.total_players - elimination_position + 1
+            placement_reward = self._get_exponential_placement_reward(final_placement)
         elif self._tournament_finished() and player.stack > 0:  # Tournament ends and player still alive
             if player.name == "Player_0" and self._sharky_reached_heads_up():
-                # Sharky reached heads-up! Maximum reward (equivalent to winning)
-                placement_reward = self._get_placement_reward(1)  # Winner reward
-                # Note: Heads-up achievement announcement happens elsewhere
+                placement_reward = self._get_exponential_placement_reward(1)  # Winner reward
             elif self._tournament_finished():
-                # Other player survived to heads-up
-                placement_reward = self._get_placement_reward(2)  # Runner-up reward
+                placement_reward = self._get_exponential_placement_reward(2)  # Runner-up reward
         
-        # 3. Survival bonus (small bonus for surviving each action while in hand)
-        survival_bonus = 0
+        # 3. TACTICAL POKER REWARDS (pot odds, aggression analysis)
+        if hasattr(self, '_last_action_context'):
+            tactical_reward = self._calculate_tactical_reward(player, self._last_action_context)
+        
+        # 4. AGGRESSION AND BLUFFING INCENTIVES
+        if hasattr(self, '_last_action_type'):
+            aggression_reward = self._calculate_aggression_reward(player, self._last_action_type, stack_change)
+        
+        # 5. OPPONENT READ REWARDS (bluff catching, hero calls, laydowns)
+        opponent_read_reward = self._calculate_opponent_read_reward(player, stack_change)
+        
+        # 6. SURVIVAL AND PROGRESSION BONUSES
         if prev_stack > 0 and player.stack > 0 and player.in_hand:
-            survival_bonus = 0.5  # Small bonus for surviving each action
+            # Stack-relative survival bonus - bigger stacks get smaller bonuses
+            stack_percentile = self._get_stack_percentile(player)
+            survival_bonus = max(2.0, 8.0 * (1 - stack_percentile))  # Increased range 2-8 for short stacks
         
-        # 4. Blind level progression bonus (reward for surviving blind increases)
-        progression_bonus = 0
         if self.current_blind_level > 0 and player.stack > 0:
-            progression_bonus = self.current_blind_level * 2  # Bonus increases with blind level survived
+            # Progressive bonus for surviving higher blind levels (reduced scaling)
+            progression_bonus = (self.current_blind_level ** 1.2) * 2.0  # Reduced from level^1.5 * 3
         
-        total_reward = stack_change + placement_reward + survival_bonus + progression_bonus
+        # 6. TOURNAMENT POSITION AWARENESS BONUS
+        position_bonus = self._calculate_position_bonus(player)
+        
+        # Combine all rewards
+        total_reward = (stack_change_reward + placement_reward + chip_preservation_reward + 
+                       tactical_reward + aggression_reward + opponent_read_reward + 
+                       survival_bonus + progression_bonus + position_bonus)
         
         return total_reward
+    
+    def _calculate_tactical_reward(self, player, action_context):
+        """Reward good tactical poker decisions based on pot odds and situation"""
+        if not action_context:
+            return 0
+        
+        reward = 0
+        action_type = action_context.get('action')
+        pot_size = action_context.get('pot_size', 0)
+        to_call = action_context.get('to_call', 0)
+        stack_invested = action_context.get('stack_invested', 0)
+        
+        if action_type == 'call' and to_call > 0:
+            # Reward good calls based on pot odds
+            pot_odds = to_call / max(pot_size + to_call, 1)
+            
+            if pot_odds < 0.25:  # Getting 3:1 or better
+                reward += 15  # Good pot odds call
+            elif pot_odds < 0.33:  # Getting 2:1
+                reward += 10
+            elif pot_odds > 0.5:  # Bad pot odds
+                reward -= 10
+        
+        elif action_type == 'raise':
+            # Reward position-based aggression and value betting
+            remaining_players = len([p for p in self.all_players if p.stack > 0])
+            
+            if remaining_players <= 4:  # Short-handed play
+                reward += 8  # Encourage aggression when short-handed
+            
+            # Reward for building pot when ahead (stack growth indicates success)
+            if stack_invested > 0:
+                reward += min(stack_invested * 0.1, 20)
+        
+        elif action_type == 'fold':
+            # Reward disciplined folds to avoid large losses
+            if to_call > player.stack * 0.2:  # Folding to large bet relative to stack
+                reward += 5  # Good disciplined fold
+        
+        return reward
+    
+    def _calculate_aggression_reward(self, player, action_type, stack_change):
+        """Reward successful aggression and bluffing"""
+        reward = 0
+        
+        if action_type == 'raise':
+            # Reward raises that win pots without showdown (successful bluffs/value)
+            if stack_change > 0:
+                reward += min(stack_change * 0.2, 35)  # Increased cap from 25 to 35
+                
+                # Bonus for winning without showdown (indicates fold equity or bluffing success)
+                table = self.tables.get(self.active_table_id)
+                if table and hasattr(table.game, 'hand_over') and table.game.hand_over:
+                    active_players_in_hand = len([p for p in table.players if p.in_hand and p.stack > 0])
+                    if active_players_in_hand <= 1:  # Won by making others fold
+                        reward += 15  # Bluffing/aggression success bonus
+            else:
+                # Small penalty for failed aggression to encourage better timing
+                reward -= 3
+        
+        elif action_type == 'call':
+            # Reward successful calls (when they lead to winning)
+            if stack_change > 0:
+                reward += min(stack_change * 0.15, 25)  # Increased cap from 20 to 25
+        
+        return reward
+    
+    def _calculate_opponent_read_reward(self, player, stack_change):
+        """Reward successful opponent reads - bluff catching, hero calls, and good laydowns"""
+        if player.name != "Player_0":  # Only track reads for Sharky
+            return 0
+        
+        reward = 0
+        table = self.tables.get(self.active_table_id)
+        if not table:
+            return 0
+        
+        # Only evaluate reads when we have observable information
+        # This happens at showdown or when opponent's actions are revealed through pot wins
+        if hasattr(table.game, 'hand_over') and table.game.hand_over:
+            reward += self._evaluate_hand_reads(player, table, stack_change)
+        
+        return reward
+    
+    def _evaluate_hand_reads(self, player, table, stack_change):
+        """Evaluate the quality of Sharky's reads based on revealed information"""
+        reward = 0
+        
+        # Check if we reached showdown (cards revealed)
+        if hasattr(table.game, 'phase_idx') and table.game.phase_idx >= len(table.game.PHASES) - 1:
+            reward += self._evaluate_showdown_reads(player, table, stack_change)
+        
+        # Check for successful bluff catches (won pot against aggressive betting)
+        if stack_change > 0:
+            reward += self._evaluate_bluff_catch_reads(player, table, stack_change)
+        
+        # Check for good fold decisions (avoided traps)
+        if hasattr(self, '_last_action_type') and self._last_action_type == 'fold':
+            reward += self._evaluate_fold_reads(player, table)
+        
+        return reward
+    
+    def _evaluate_showdown_reads(self, player, table, stack_change):
+        """Reward good reads when cards are shown at showdown"""
+        reward = 0
+        
+        # Find opponents who reached showdown
+        showdown_players = [p for p in table.players if (p.in_hand or getattr(p, 'all_in', False)) and p != player]
+        
+        for opponent in showdown_players:
+            if not hasattr(opponent, 'hole_cards') or not opponent.hole_cards:
+                continue
+            
+            # Analyze opponent's hand strength
+            try:
+                from engine.hand_evaluator import hand_rank
+                hand_rank_tuple = hand_rank(opponent.hole_cards + table.game.community_cards)
+                
+                # Convert hand rank to relative strength (0.0 to 1.0)
+                # hand_rank_tuple[0] is: 0=high card, 1=pair, 2=two pair, 3=three kind, 4=straight, 5=flush, 6=full house, 7=four kind, 8=straight flush
+                hand_strength_category = hand_rank_tuple[0][0]  # First element of first tuple
+                opponent_hand_strength = hand_strength_category / 8.0  # Normalize to 0-1
+                
+                # Get betting context for this opponent
+                betting_context = self._analyze_opponent_betting_pattern(opponent, table)
+                
+                # Reward successful reads based on betting vs actual hand strength
+                if betting_context['was_aggressive'] and opponent_hand_strength < 0.375:  # Weak hand (0-2: high card to two pair)
+                    # Opponent was betting aggressively with weak hand (bluffing)
+                    if stack_change > 0:  # Sharky called and won
+                        reward += 30  # Excellent bluff catch
+                        print(f"🎯 BLUFF CATCH! Sharky caught {opponent.name} bluffing with weak hand")
+                    elif hasattr(self, '_last_action_type') and self._last_action_type == 'call':
+                        reward += 15  # Good call even if lost (opponent got lucky)
+                
+                elif not betting_context['was_aggressive'] and opponent_hand_strength > 0.625:  # Strong hand (5+: flush or better)
+                    # Opponent played passively with strong hand
+                    if hasattr(self, '_last_action_type') and self._last_action_type == 'fold':
+                        reward += 20  # Good fold against strong hand
+                        print(f"🛡️ GOOD READ! Sharky avoided trap against {opponent.name}'s strong hand")
+                
+                elif betting_context['was_aggressive'] and opponent_hand_strength > 0.625:  # Strong hand with aggression
+                    # Opponent was betting aggressively with strong hand (value betting)
+                    if hasattr(self, '_last_action_type') and self._last_action_type == 'fold':
+                        reward += 25  # Excellent disciplined fold
+                        print(f"🧠 DISCIPLINED FOLD! Sharky correctly read {opponent.name}'s value bet")
+                
+            except Exception as e:
+                # Hand evaluation failed, skip this read analysis
+                pass
+        
+        return reward
+    
+    def _evaluate_bluff_catch_reads(self, player, table, stack_change):
+        """Reward catching bluffs based on pot dynamics"""
+        reward = 0
+        
+        # Look for scenarios where Sharky called a large bet and won
+        if (hasattr(self, '_last_action_context') and 
+            self._last_action_context and 
+            self._last_action_type == 'call'):
+            
+            to_call = self._last_action_context.get('to_call', 0)
+            pot_size = self._last_action_context.get('pot_size', 0)
+            
+            # Large call relative to pot size indicates potential bluff catch
+            if to_call > 0 and pot_size > 0:
+                call_to_pot_ratio = to_call / pot_size
+                
+                if call_to_pot_ratio > 0.75 and stack_change > 0:  # Called large bet and won
+                    reward += 20  # Successful hero call
+                    print(f"🦈 HERO CALL! Sharky made a big call and won the pot")
+                elif call_to_pot_ratio > 0.5 and stack_change > 0:
+                    reward += 10  # Good call timing
+        
+        return reward
+    
+    def _evaluate_fold_reads(self, player, table):
+        """Reward good fold decisions that avoid losses"""
+        reward = 0
+        
+        # Check if fold saved chips against strong betting
+        if hasattr(self, '_last_action_context') and self._last_action_context:
+            to_call = self._last_action_context.get('to_call', 0)
+            pot_size = self._last_action_context.get('pot_size', 0)
+            
+            # Reward disciplined folds to large bets
+            if to_call > 0 and pot_size > 0:
+                call_to_pot_ratio = to_call / pot_size
+                stack_to_call_ratio = to_call / max(player.stack, 1)
+                
+                # Big fold relative to stack size
+                if stack_to_call_ratio > 0.3:
+                    reward += 10  # Disciplined big fold
+                elif call_to_pot_ratio > 0.6:
+                    reward += 5   # Good fold to large bet
+        
+        return reward
+    
+    def _analyze_opponent_betting_pattern(self, opponent, table):
+        """Analyze opponent's betting pattern to understand their perceived hand strength"""
+        context = {
+            'was_aggressive': False,
+            'bet_frequency': 0,
+            'bet_sizing': 'small'
+        }
+        
+        # Simple heuristic: if opponent contributed significantly to pot, they were aggressive
+        if hasattr(opponent, 'total_contributed') and opponent.total_contributed > 0:
+            pot_contribution_ratio = opponent.total_contributed / max(table.game.pot, 1)
+            
+            if pot_contribution_ratio > 0.4:  # Contributed 40%+ of pot
+                context['was_aggressive'] = True
+                context['bet_sizing'] = 'large'
+            elif pot_contribution_ratio > 0.25:  # Contributed 25%+ of pot
+                context['was_aggressive'] = True
+                context['bet_sizing'] = 'medium'
+        
+        return context
+    
+    def _get_stack_percentile(self, player):
+        """Get player's stack percentile among remaining players"""
+        remaining_players = [p for p in self.all_players if p.stack > 0]
+        if len(remaining_players) <= 1:
+            return 0.5
+        
+        stacks = sorted([p.stack for p in remaining_players])
+        player_rank = stacks.index(player.stack)
+        return player_rank / (len(stacks) - 1)
+    
+    def _calculate_position_bonus(self, player):
+        """Reward based on tournament position and stack management"""
+        remaining_players = [p for p in self.all_players if p.stack > 0]
+        total_remaining = len(remaining_players)
+        
+        if total_remaining <= 1:
+            return 0
+        
+        # Calculate chip position
+        stacks = sorted([p.stack for p in remaining_players], reverse=True)
+        try:
+            chip_position = stacks.index(player.stack) + 1
+        except ValueError:
+            chip_position = total_remaining  # Fallback if exact match not found
+        
+        # Reward being in top positions, especially near final table
+        if total_remaining <= 9:  # Final table
+            if chip_position <= 3:
+                return 15  # Reduced from 25 - Top 3 at final table
+            elif chip_position <= 6:
+                return 10  # Reduced from 15 - Top half at final table
+        elif total_remaining <= 18:  # Late tournament
+            if chip_position <= 5:
+                return 10  # Reduced from 15 - Chip leader group
+        
+        # General chip position bonus
+        position_percentile = 1 - (chip_position - 1) / (total_remaining - 1)
+        return position_percentile * 10
     
     def _get_placement_reward(self, placement):
         """Placement-based rewards for 18-player tournament (scales with tournament size)"""
@@ -719,6 +1035,32 @@ class MultiTableTournamentEnv(gym.Env):
                     rewards.append(max(1, 50 - (i - max_players // 2)))  # Consolation
         
         return rewards[placement - 1] if placement <= len(rewards) else 0
+    
+    def _get_exponential_placement_reward(self, placement):
+        """Exponentially scaled placement rewards that heavily favor top finishes"""
+        max_players = self.total_players
+        
+        # Base multiplier increases exponentially for top positions
+        if placement == 1:
+            base_reward = 2000 * max_players / 18  # Scale with tournament size
+        elif placement == 2:
+            base_reward = 1000 * max_players / 18
+        elif placement == 3:
+            base_reward = 600 * max_players / 18
+        elif placement <= 9:  # Final table
+            # Exponential decay for final table
+            position_from_top = placement - 1
+            base_reward = 400 * (0.85 ** position_from_top) * max_players / 18
+        elif placement <= max_players // 2:  # In the money
+            # Linear decay for ITM positions
+            itm_position = placement - 9
+            itm_total = max_players // 2 - 9
+            base_reward = 50 + (150 * (1 - itm_position / max(itm_total, 1))) * max_players / 18
+        else:
+            # Minimal consolation prizes
+            base_reward = max(1, 25 * max_players / 18)
+        
+        return int(base_reward)
     
     def reset(self, *, seed=None, options=None):
         """Reset the tournament to initial state"""
@@ -988,10 +1330,27 @@ class MultiTableTournamentEnv(gym.Env):
                 poker_action = "fold"
                 raise_amount = 0
         
+        # Store action context for tactical reward calculation
+        pre_action_pot = table.game.pot
+        stack_invested_this_action = 0
+        
         # Execute action with error handling
         prev_stack = player.stack
         try:
             table.game.step(poker_action, raise_amount)
+            
+            # Calculate stack invested in this action
+            stack_invested_this_action = prev_stack - player.stack
+            
+            # Store action context for reward calculation
+            self._last_action_context = {
+                'action': poker_action,
+                'pot_size': pre_action_pot,
+                'to_call': to_call,
+                'stack_invested': stack_invested_this_action,
+                'raise_amount': raise_amount if poker_action == 'raise' else 0
+            }
+            self._last_action_type = poker_action
             
             # Validate state consistency after action execution
             if hasattr(table.game, '_validate_state_consistency'):
@@ -1004,6 +1363,11 @@ class MultiTableTournamentEnv(gym.Env):
             print(f"[DEBUG] Player stack: {player.stack}, current_bet: {player.current_bet}")
             print(f"[DEBUG] Game current_bet: {table.game.current_bet}, last_raise: {table.game.last_raise_amount}")
             print(f"[DEBUG] Big blind: {table.game.big_blind}, to_call calculated as: {max(0, table.game.current_bet - player.current_bet)}")
+            
+            # Clear action context on error
+            self._last_action_context = None
+            self._last_action_type = None
+            
             obs = self._get_obs()
             return obs, -10, False, False, {"action_mask": self.legal_action_mask()}
         

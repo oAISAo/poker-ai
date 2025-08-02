@@ -17,7 +17,7 @@ from env.rule_based_tournament_env import create_rule_based_training_env
 def main():
     if len(sys.argv) != 2:
         print("Usage: python evaluate_sharky_simple.py <version>")
-        sys.exit(1)
+        # sys.exit(1)
     
     version = sys.argv[1]
     
@@ -38,7 +38,7 @@ def main():
             'wins', 'chips from pot', 'SB stack:', 'BB stack:', 'Exiting step:',
             'Tournament initialized:', 'Using cpu device', 'Wrapping the env', 'Entering step:',
             '📂 Sharky', 'loaded from models', "==> ", "'s turn:", "Action=", 'bets ', 'raises to',
-            '[PLAYER bet_chips]','[DEBUG', '[BALANCE_TABLE]', '[INCONSISTENCY]', '[SHOWDOWN]', '[PLAYER', # aisa comment out when debugging
+            '[PLAYER bet_chips]','[DEBUG', '[BALANCE_TABLE]', '[INCONSISTENCY-CHECK]', '[SHOWDOWN]', '[PLAYER', # aisa comment out when debugging
             'bet_chips', 'suppress_log'
         ]):
             return  # Block these

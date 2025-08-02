@@ -69,7 +69,7 @@ def train_sharky_vs_rule_based(
             'Advancing to phase:', 'Removing', 'from players_to_act', 'handle_',
             '--- Showdown ---', 'Blinds increased to',
             'wins', 'chips from pot', 'SB stack:', 'BB stack:', 'Removed', 'eliminated players',
-            '[PLAYER bet_chips]','[DEBUG', '[BALANCE_TABLE]', '[INCONSISTENCY]', '[SHOWDOWN]', '[PLAYER', # aisa comment out when debugging
+            '[PLAYER bet_chips]','[DEBUG', '[BALANCE_TABLE]', '[INCONSISTENCY-CHECK]', '[SHOWDOWN]', '[PLAYER', # aisa comment out when debugging
             'Error in game step',
         ]):
             pass  # Skip these debug messages

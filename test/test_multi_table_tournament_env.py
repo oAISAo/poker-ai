@@ -408,8 +408,8 @@ def test_sharky_heads_up_reward_maximum():
     # Calculate reward when tournament finishes and Sharky reaches heads-up
     reward = env._calculate_reward(sharky, prev_stack)
     
-    # Should get winner-level reward (maximum placement reward)
-    winner_reward = env._get_placement_reward(1)
+    # Should get winner-level reward (maximum placement reward) - using new exponential system
+    winner_reward = env._get_exponential_placement_reward(1)
     
     # Verify Sharky gets maximum placement reward
     assert winner_reward > 0, "Winner reward should be positive"
@@ -436,8 +436,8 @@ def test_non_sharky_heads_up_reward():
     # Calculate reward for non-Sharky player reaching heads-up
     reward = env._calculate_reward(surviving_player, prev_stack)
     
-    # Should get runner-up reward
-    runner_up_reward = env._get_placement_reward(2)
+    # Should get runner-up reward - using new exponential system
+    runner_up_reward = env._get_exponential_placement_reward(2)
     assert runner_up_reward > 0, "Runner-up reward should be positive"
     assert reward >= runner_up_reward, f"Non-Sharky should get runner-up reward {runner_up_reward}, got {reward}"
 
@@ -508,8 +508,8 @@ def test_reward_calculation_edge_case_no_sharky():
     # Should not crash when calculating reward without Sharky
     reward = env._calculate_reward(remaining_player, prev_stack)
     
-    # Should get runner-up reward (since Sharky didn't reach heads-up)
-    runner_up_reward = env._get_placement_reward(2)
+    # Should get runner-up reward (since Sharky didn't reach heads-up) - using new exponential system
+    runner_up_reward = env._get_exponential_placement_reward(2)
     assert reward >= runner_up_reward, "Should get runner-up reward when Sharky not present"
 
 def test_realistic_blind_timing_with_heads_up():
