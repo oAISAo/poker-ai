@@ -164,6 +164,9 @@ class MultiTableTournamentEnv(gym.Env):
         self.elimination_order: List[Player] = []
         self.active_table_id: int = 0  # Current table being played
         
+        # For tracking starting stacks for simultaneous elimination ranking
+        self.starting_stacks_this_hand: Dict[str, int] = {}  # player_name -> starting_stack
+        
         # Calculate initial number of tables needed
         self.num_tables = math.ceil(total_players / max_players_per_table)
         
@@ -249,6 +252,8 @@ class MultiTableTournamentEnv(gym.Env):
             
             # Initialize the table's game (first hand)
             table.game.reset_for_new_hand(is_first_hand=True)
+            # Store starting stacks for first hand
+            self._store_starting_stacks(table)
     
     def _get_active_tables(self) -> List[Table]:
         """Get all tables that are still active (have 2+ players)"""
@@ -291,7 +296,7 @@ class MultiTableTournamentEnv(gym.Env):
         # Log all table player counts before balancing
         print("[BALANCE_TABLE] Table player counts before balancing:")
         for tid, t in self.tables.items():
-            print(f"  Table {tid}: {len(t.players)} players, active: {t.is_active}, in_hand: {[p.in_hand for p in t.players]}")
+            print(f"[BALANCE_TABLE]  Table {tid}: {len(t.players)} players, active: {t.is_active}, in_hand: {[p.in_hand for p in t.players]}")
         # Never forcibly end a hand due to eliminations; wait for hand to finish naturally
         # If table is in a hand, skip balancing until hand is over
         if not table or not table.is_active:
@@ -353,6 +358,8 @@ class MultiTableTournamentEnv(gym.Env):
                         active_tables[0].game.big_blind = bb
                         active_tables[0].game.ante = ante
                         active_tables[0].game.reset_for_new_hand(is_first_hand=False)
+                        # Store starting stacks for new hand after table breaking
+                        self._store_starting_stacks(active_tables[0])
                         print(f"[BALANCE_TABLE] Started new hand at table {active_tables[0].table_id} after breaking.")
                     except Exception as e:
                         print(f"[BALANCE_TABLE] Error resetting hand after breaking: {e}")
@@ -525,6 +532,12 @@ class MultiTableTournamentEnv(gym.Env):
                 # At maximum blind level, reset counter to prevent overflow
                 self.hands_played_this_level = 0
     
+    def _store_starting_stacks(self, table: Table):
+        """Store starting stack for each player at the beginning of a hand for proper simultaneous elimination ranking"""
+        for player in table.players:
+            if player.stack > 0:  # Only store for players with chips
+                self.starting_stacks_this_hand[player.name] = player.stack
+    
     def _get_ordinal(self, n):
         """Convert number to ordinal (1st, 2nd, 3rd, etc.)"""
         if 10 <= n % 100 <= 20:
@@ -546,29 +559,46 @@ class MultiTableTournamentEnv(gym.Env):
     
     def _update_elimination_order(self):
         """Update elimination order with players who just busted"""
+        # Find all newly eliminated players (stack == 0 but not in elimination_order)
+        newly_eliminated = []
         for table in self.tables.values():
             for player in table.players:
                 if player.stack == 0 and player not in self.elimination_order:
                     # Mark eliminated player as out of hand immediately
                     player.in_hand = False
-                    
-                    self.elimination_order.append(player)
-                    elimination_position = len(self.elimination_order)
-                    final_placement = self.total_players - elimination_position + 1
-                    print(f"Player {player.name} eliminated ({self._get_ordinal(elimination_position)} elimination, finishes {self._get_ordinal(final_placement)} place)")
-                    
-                    # Show Sharky's stack after each elimination - find current stack from all tables
-                    sharky_player = None
-                    for t in self.tables.values():
-                        for p in t.players:
-                            if p.name == "Player_0" and p.stack > 0:
-                                sharky_player = p
-                                break
-                        if sharky_player:
-                            break
-                    
-                    if sharky_player:
-                        print(f"🦈 Sharky (Player_0) stack: {sharky_player.stack} chips")
+                    newly_eliminated.append(player)
+        
+        if not newly_eliminated:
+            return  # No new eliminations
+        
+        # For simultaneous eliminations, sort by starting stack size (higher stack gets better placement)
+        # In real poker tournaments, the player with the larger starting stack when the hand began
+        # gets the higher placement when eliminated on the same hand
+        if len(newly_eliminated) > 1:
+            # Sort by starting stack size (if available) or current name as tiebreaker
+            # Higher starting stack = better placement = eliminated later in our order
+            newly_eliminated.sort(key=lambda p: self.starting_stacks_this_hand.get(p.name, 0), reverse=True)
+        
+        # Add to elimination order and announce
+        for player in newly_eliminated:
+            self.elimination_order.append(player)
+            elimination_position = len(self.elimination_order)
+            final_placement = self.total_players - elimination_position + 1
+            print(f"Player {player.name} eliminated ({self._get_ordinal(elimination_position)} elimination, finishes {self._get_ordinal(final_placement)} place)")
+        
+        # Show Sharky's stack after eliminations (only once if multiple eliminations)
+        if newly_eliminated:
+            sharky_player = None
+            for t in self.tables.values():
+                for p in t.players:
+                    if p.name == "Player_0" and p.stack > 0:
+                        sharky_player = p
+                        break
+                if sharky_player:
+                    break
+            
+            if sharky_player:
+                print(f"🦈 Sharky (Player_0) stack: {sharky_player.stack} chips")
     
     def _tournament_finished(self) -> bool:
         """Check if tournament is finished (2 or fewer players remain - heads-up should be tested separately)"""
@@ -919,16 +949,16 @@ class MultiTableTournamentEnv(gym.Env):
         # Calculate comprehensive tournament reward
         reward = self._calculate_reward(player, prev_stack)
         
-        # Check for eliminations after each action (players can bust mid-hand)
-        self._clean_elimination_order()  # Clean up inconsistent elimination tracking
-        self._update_elimination_order()
-        
         # Check if hand is over
         if table.game.hand_over:
             table.hands_played += 1
             self.hands_played_this_level += 1
             self.total_hands_played += 1
             
+            # Check for eliminations at end of hand
+            self._clean_elimination_order()  # Clean up inconsistent elimination tracking
+            self._update_elimination_order()
+
             # Start new hand if table still active
             if table.get_active_player_count() >= 2:
                 try:
@@ -938,15 +968,13 @@ class MultiTableTournamentEnv(gym.Env):
                     table.game.big_blind = bb
                     table.game.ante = ante
                     table.game.reset_for_new_hand(is_first_hand=False)
+                    # Store starting stacks for this hand (for proper simultaneous elimination ranking)
+                    self._store_starting_stacks(table)
                 except Exception as e:
                     print(f"Error resetting hand: {e}")
                     table.is_active = False
             else:
                 table.is_active = False
-            
-            # Check for eliminations
-            self._clean_elimination_order()  # Clean up inconsistent elimination tracking
-            self._update_elimination_order()
 
             # Table balancing: after hand at this table
             try:
