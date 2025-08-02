@@ -68,7 +68,7 @@ class PokerGame:
             print(f"[WARNING] [TABLE] Stack sum inconsistency detected before posting blinds: total player stack sum ({actual_total}) != expected ({expected_total}) [starting_stack={self.starting_stack}, num_players={len(self.players)}]")
             for p in self.players:
                 print(f"    {p.name}: stack={p.stack}")
-            # sys.exit(1) # aisa todo
+            sys.exit(1) # aisa todo
         # Extra debug: print player bets and pot before resetting for new hand
         print(f"[INCONSISTENCY] (Before reset_for_new_hand) Table {getattr(self, 'table_id', '?')}: Player bets and pot before reset:")
         for player in self.players:
@@ -330,7 +330,7 @@ class PokerGame:
             for issue in inconsistencies:
                 print(f"  - {issue}")
             print(f"  - Total player bets: {total_player_bets}, Game pot: {self.pot}")
-            # sys.exit(1) # aisa todo
+            sys.exit(1) # aisa todo
             return False
         return True
     
@@ -342,7 +342,7 @@ class PokerGame:
         max_player_bet = max((p.current_bet for p in self.players), default=0)
         if self.current_bet != max_player_bet:
             print(f"[WARNING] SYNC NEEDED! Synchronizing game.current_bet from {self.current_bet} to {max_player_bet}")
-            # sys.exit(1) # aisa todo
+            sys.exit(1) # aisa todo
             self.current_bet = max_player_bet
     
     def fix_state_inconsistencies(self):
@@ -906,7 +906,7 @@ class PokerGame:
             print(f"[WARNING] Pot mismatch: calculated {total_pot}, actual {self.pot}")
             print(f"[SHOWDOWN] Player contributions: {contributions}")
             print(f"[SHOWDOWN] Side pots: {pots}")
-            # sys.exit(1) # aisa todo
+            sys.exit(1) # aisa todo
             # Try to fix the mismatch by using the calculated total
             if abs(total_pot - self.pot) <= len(self.players):  # Small discrepancy, likely rounding
                 print(f"[SHOWDOWN] Adjusting pot from {self.pot} to calculated {total_pot}")

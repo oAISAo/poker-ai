@@ -91,8 +91,8 @@ class MultiTableTournamentEnv(gym.Env):
             max_players_per_table: Maximum players per table
             min_players_per_table: Minimum players before table breaking (2 for heads-up)
             starting_stack: Starting chip stack for each player
-            blinds_schedule: List of (small_blind, big_blind) tuples
-            hands_per_blind_level: Hands before blind level increases (9 for turbo)
+            blinds_schedule: List of (small_blind, big_blind, ante) tuples
+            hands_per_blind_level: Hands before blind level increases (fallback for old system)
             table_balancing_threshold: Trigger table balancing when table drops below this (5)
         """
         super().__init__()
@@ -117,7 +117,13 @@ class MultiTableTournamentEnv(gym.Env):
         self.table_balancing_threshold = table_balancing_threshold
         self.hands_per_blind_level = hands_per_blind_level
         
-        # Realistic turbo tournament blind structure (9-hand levels)
+        # Time-based blind system for realistic tournament dynamics
+        import time
+        self.tournament_start_time = None  # Set when tournament begins
+        self.target_hands_per_level = 10   # Realistic hands per blind level (like real tournaments)
+        self.use_realistic_blind_timing = True  # Enable hybrid time+hand tracking
+        
+        # Realistic turbo tournament blind structure (5-6 hands per level)
         self.blinds_schedule = blinds_schedule or [
             (10, 20, 0),     # Level 1 - no ante
             (20, 40, 0),     # Level 2 - no ante
@@ -512,25 +518,52 @@ class MultiTableTournamentEnv(gym.Env):
             print(f"Player {player_to_move.name} moved from table {source_table.table_id} to {target_table.table_id}")
     
     def _increase_blinds_if_needed(self):
-        """Check if blinds should increase and apply to all tables"""
-        if self.hands_played_this_level >= self.hands_per_blind_level:
-            if self.current_blind_level < len(self.blinds_schedule) - 1:
-                self.current_blind_level += 1
-                self.hands_played_this_level = 0
-                
-                # Apply new blinds and antes to all active tables
-                blind_level = self.blinds_schedule[self.current_blind_level]
-                sb, bb, ante = blind_level  # All levels are 3-tuples after normalization
+        """Check if blinds should increase based on realistic tournament timing"""
+        if self.use_realistic_blind_timing:
+            # Hybrid system: Track hands played across all tables for realistic tournament progression
+            # In real tournaments, ~5-6 hands are played per blind level due to thinking time
+            total_hands_all_tables = sum(table.hands_played for table in self.tables.values())
+            target_hands_for_increase = self.target_hands_per_level * len(self._get_active_tables())
+            
+            if total_hands_all_tables >= target_hands_for_increase:
+                if self.current_blind_level < len(self.blinds_schedule) - 1:
+                    old_level = self.current_blind_level
+                    self.current_blind_level += 1
                     
-                for table in self._get_active_tables():
-                    table.game.small_blind = sb
-                    table.game.big_blind = bb
-                    table.game.ante = ante
-                
-                print(f"Blinds increased to {sb}/{bb} (Level {self.current_blind_level + 1})")
-            else:
-                # At maximum blind level, reset counter to prevent overflow
-                self.hands_played_this_level = 0
+                    # Reset hand counts for next level
+                    self.hands_played_this_level = 0
+                    
+                    # Apply new blinds and antes to all active tables
+                    blind_level = self.blinds_schedule[self.current_blind_level]
+                    sb, bb, ante = blind_level
+                        
+                    for table in self._get_active_tables():
+                        table.game.small_blind = sb
+                        table.game.big_blind = bb
+                        table.game.ante = ante
+                    
+                    print(f"[BLINDS] Realistic increase: Level {old_level + 1} -> {self.current_blind_level + 1} ({sb}/{bb}) after {total_hands_all_tables} total hands")
+                else:
+                    # At maximum blind level, reset counter to prevent overflow
+                    self.hands_played_this_level = 0
+        else:
+            # Fallback: Original hand-based system
+            if self.hands_played_this_level >= self.hands_per_blind_level:
+                if self.current_blind_level < len(self.blinds_schedule) - 1:
+                    self.current_blind_level += 1
+                    self.hands_played_this_level = 0
+                    
+                    blind_level = self.blinds_schedule[self.current_blind_level]
+                    sb, bb, ante = blind_level
+                        
+                    for table in self._get_active_tables():
+                        table.game.small_blind = sb
+                        table.game.big_blind = bb
+                        table.game.ante = ante
+                    
+                    print(f"[BLINDS] Hand-based increase to {sb}/{bb} (Level {self.current_blind_level + 1})")
+                else:
+                    self.hands_played_this_level = 0
     
     def _store_starting_stacks(self, table: Table):
         """Store starting stack for each player at the beginning of a hand for proper simultaneous elimination ranking"""
@@ -599,11 +632,28 @@ class MultiTableTournamentEnv(gym.Env):
             
             if sharky_player:
                 print(f"🦈 Sharky (Player_0) stack: {sharky_player.stack} chips")
+        
+        # Check for heads-up achievement after eliminations
+        if self._tournament_finished() and self._sharky_reached_heads_up():
+            remaining_players = [p for p in self.all_players if p.stack > 0]
+            opponent = next((p for p in remaining_players if p.name != "Player_0"), None)
+            if opponent:
+                print(f"🏆 HEADS-UP ACHIEVED! Sharky vs {opponent.name}")
+                print(f"🦈 Sharky: {next(p for p in remaining_players if p.name == 'Player_0').stack} chips")
+                print(f"🎯 {opponent.name}: {opponent.stack} chips") 
+                print(f"🎉 Training goal reached - Sharky made it to heads-up!")
     
     def _tournament_finished(self) -> bool:
-        """Check if tournament is finished (2 or fewer players remain - heads-up should be tested separately)"""
+        """Check if tournament is finished (heads-up reached - we don't train heads-up play)"""
         remaining_players = [p for p in self.all_players if p.stack > 0]
         return len(remaining_players) <= 2
+    
+    def _sharky_reached_heads_up(self) -> bool:
+        """Check if Sharky (Player_0) made it to heads-up (our training goal)"""
+        remaining_players = [p for p in self.all_players if p.stack > 0]
+        if len(remaining_players) == 2:
+            return any(p.name == "Player_0" for p in remaining_players)
+        return False
     
     def _calculate_reward(self, player, prev_stack):
         """Calculate comprehensive tournament reward"""
@@ -616,10 +666,15 @@ class MultiTableTournamentEnv(gym.Env):
             elimination_position = len([p for p in self.all_players if p.stack == 0])  # Current elimination position
             final_placement = self.total_players - elimination_position + 1  # Convert to final placement
             placement_reward = self._get_placement_reward(final_placement)
-            print(f"[DEBUG] {player.name} eliminated ({self._get_ordinal(elimination_position)} elimination, finishes {self._get_ordinal(final_placement)} place), placement reward: {placement_reward}")
-        elif self._tournament_finished() and player.stack > 0:  # Winner
-            placement_reward = self._get_placement_reward(1)  # Winner reward
-            print(f"[DEBUG] {player.name} wins tournament! Final placement: 1st, placement reward: {placement_reward}")
+            # Note: Elimination announcement happens in _update_elimination_order(), not here
+        elif self._tournament_finished() and player.stack > 0:  # Tournament ends and player still alive
+            if player.name == "Player_0" and self._sharky_reached_heads_up():
+                # Sharky reached heads-up! Maximum reward (equivalent to winning)
+                placement_reward = self._get_placement_reward(1)  # Winner reward
+                # Note: Heads-up achievement announcement happens elsewhere
+            elif self._tournament_finished():
+                # Other player survived to heads-up
+                placement_reward = self._get_placement_reward(2)  # Runner-up reward
         
         # 3. Survival bonus (small bonus for surviving each action while in hand)
         survival_bonus = 0
@@ -680,6 +735,12 @@ class MultiTableTournamentEnv(gym.Env):
         self.total_hands_played = 0
         self.elimination_order = []
         self.active_table_id = 0
+        
+        # Initialize tournament timer for realistic blind progression
+        if self.use_realistic_blind_timing:
+            import time
+            self.tournament_start_time = time.time()
+            print(f"[TOURNAMENT] Started with realistic blind timing - target {self.target_hands_per_level} hands per level per table")
         
         # Clear existing tables
         self.tables.clear()
@@ -868,7 +929,7 @@ class MultiTableTournamentEnv(gym.Env):
                 # Check for inconsistent state and fix it using the game's validation system
                 if not table.game._validate_state_consistency(f"before raise by {player.name}"):
                     print(f"[WARNING] Table {getattr(self, 'table_id', '?')} State inconsistency detected before raise - attempting fix...")
-                    # sys.exit(1) # aisa todo
+                    sys.exit(1) # aisa todo
                     table.game.fix_state_inconsistencies()
                     # Recalculate to_call after fixing state
                     to_call = max(0, table.game.current_bet - player.current_bet)

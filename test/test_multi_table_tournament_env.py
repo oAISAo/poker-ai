@@ -331,6 +331,216 @@ if __name__ == "__main__":
     test_multi_table_tournament_initialization()
     print("Multi-table tournament initialization test passed!")
 
+# ====== HEADS-UP FUNCTIONALITY TESTS ======
+
+def test_tournament_finishes_at_heads_up():
+    """Test that tournament correctly identifies completion when heads-up is reached"""
+    env = MultiTableTournamentEnv(total_players=5, max_players_per_table=5)
+    obs, info = env.reset()
+    
+    # Initially should not be finished (5 players)
+    assert not env._tournament_finished(), "Tournament should not be finished with 5 players"
+    
+    # Eliminate players down to 3
+    players_to_eliminate = env.all_players[:2]
+    for player in players_to_eliminate:
+        player.stack = 0
+    
+    # Should not be finished with 3 players
+    assert not env._tournament_finished(), "Tournament should not be finished with 3 players"
+    
+    # Eliminate one more player (down to 2)
+    env.all_players[2].stack = 0
+    
+    # Should be finished with 2 players (heads-up reached)
+    assert env._tournament_finished(), "Tournament should be finished with 2 players (heads-up)"
+
+def test_sharky_reaches_heads_up_detection():
+    """Test detection of when Sharky specifically reaches heads-up"""
+    env = MultiTableTournamentEnv(total_players=4, max_players_per_table=4)
+    obs, info = env.reset()
+    
+    # Ensure Player_0 is Sharky
+    sharky = next((p for p in env.all_players if p.name == "Player_0"), None)
+    assert sharky is not None, "Sharky (Player_0) should exist"
+    
+    # Initially should not be heads-up
+    assert not env._sharky_reached_heads_up(), "Should not be heads-up initially"
+    
+    # Eliminate players except Sharky and one other
+    other_players = [p for p in env.all_players if p.name != "Player_0"]
+    for player in other_players[1:]:  # Leave one other player besides Sharky
+        player.stack = 0
+    
+    # Should detect Sharky reached heads-up
+    assert env._sharky_reached_heads_up(), "Should detect Sharky reached heads-up"
+    
+    # Test case where Sharky is eliminated before heads-up
+    env2 = MultiTableTournamentEnv(total_players=4, max_players_per_table=4)
+    obs2, info2 = env2.reset()
+    
+    # Eliminate Sharky and one other player
+    sharky2 = next((p for p in env2.all_players if p.name == "Player_0"), None)
+    assert sharky2 is not None, "Sharky should exist in second test"
+    sharky2.stack = 0
+    env2.all_players[1].stack = 0  # Eliminate another player
+    
+    # Should not detect Sharky reached heads-up (Sharky eliminated)
+    assert not env2._sharky_reached_heads_up(), "Should not detect heads-up when Sharky eliminated"
+
+def test_sharky_heads_up_reward_maximum():
+    """Test that Sharky gets maximum reward when reaching heads-up"""
+    env = MultiTableTournamentEnv(total_players=4, max_players_per_table=4)
+    obs, info = env.reset()
+    
+    # Find Sharky
+    sharky = next((p for p in env.all_players if p.name == "Player_0"), None)
+    assert sharky is not None, "Sharky should exist"
+    
+    # Eliminate players to reach heads-up
+    other_players = [p for p in env.all_players if p.name != "Player_0"]
+    for player in other_players[1:]:  # Leave one opponent
+        player.stack = 0
+    
+    # Store Sharky's previous stack
+    prev_stack = sharky.stack
+    
+    # Calculate reward when tournament finishes and Sharky reaches heads-up
+    reward = env._calculate_reward(sharky, prev_stack)
+    
+    # Should get winner-level reward (maximum placement reward)
+    winner_reward = env._get_placement_reward(1)
+    
+    # Verify Sharky gets maximum placement reward
+    assert winner_reward > 0, "Winner reward should be positive"
+    # The total reward includes placement + survival + progression bonuses
+    assert reward >= winner_reward, f"Sharky should get at least winner reward {winner_reward}, got {reward}"
+
+def test_non_sharky_heads_up_reward():
+    """Test that non-Sharky players get runner-up reward when reaching heads-up"""
+    env = MultiTableTournamentEnv(total_players=4, max_players_per_table=4)
+    obs, info = env.reset()
+    
+    # Eliminate Sharky and one other player to create heads-up without Sharky
+    sharky = next((p for p in env.all_players if p.name == "Player_0"), None)
+    assert sharky is not None, "Sharky should exist"
+    sharky.stack = 0
+    env.all_players[1].stack = 0
+    
+    # Get remaining player (should get runner-up reward)
+    surviving_player = next((p for p in env.all_players if p.stack > 0 and p.name != "Player_0"), None)
+    assert surviving_player is not None, "Should have a non-Sharky survivor"
+    
+    prev_stack = surviving_player.stack
+    
+    # Calculate reward for non-Sharky player reaching heads-up
+    reward = env._calculate_reward(surviving_player, prev_stack)
+    
+    # Should get runner-up reward
+    runner_up_reward = env._get_placement_reward(2)
+    assert runner_up_reward > 0, "Runner-up reward should be positive"
+    assert reward >= runner_up_reward, f"Non-Sharky should get runner-up reward {runner_up_reward}, got {reward}"
+
+def test_heads_up_achievement_announcement():
+    """Test that heads-up achievement is properly announced"""
+    env = MultiTableTournamentEnv(total_players=4, max_players_per_table=4)
+    obs, info = env.reset()
+    
+    # Eliminate players to reach heads-up with Sharky
+    other_players = [p for p in env.all_players if p.name != "Player_0"]
+    for player in other_players[1:]:  # Leave one opponent
+        player.stack = 0
+        player.in_hand = False
+    
+    # Capture output when update_elimination_order is called
+    captured_output = io.StringIO()
+    with redirect_stdout(captured_output):
+        env._update_elimination_order()
+    
+    output = captured_output.getvalue()
+    
+    # Should announce heads-up achievement
+    assert "HEADS-UP ACHIEVED" in output, f"Should announce heads-up achievement. Output: {output}"
+    assert "Sharky vs" in output, f"Should mention Sharky in heads-up announcement. Output: {output}"
+    assert "Training goal reached" in output, f"Should mention training goal. Output: {output}"
+
+def test_heads_up_with_different_stack_sizes():
+    """Test heads-up detection works regardless of stack sizes"""
+    env = MultiTableTournamentEnv(total_players=3, max_players_per_table=3)
+    obs, info = env.reset()
+    
+    # Set up scenario where Sharky has smaller stack but still reaches heads-up
+    sharky = next((p for p in env.all_players if p.name == "Player_0"), None)
+    other_player = next((p for p in env.all_players if p.name != "Player_0"), None)
+    assert sharky is not None, "Sharky should exist"
+    assert other_player is not None, "Other player should exist"
+    
+    # Give opponent bigger stack
+    sharky.stack = 500
+    other_player.stack = 1500
+    
+    # Eliminate third player
+    third_player = next((p for p in env.all_players if p != sharky and p != other_player), None)
+    assert third_player is not None, "Third player should exist"
+    third_player.stack = 0
+    
+    # Should still detect Sharky reached heads-up despite smaller stack
+    assert env._sharky_reached_heads_up(), "Should detect heads-up regardless of stack sizes"
+    assert env._tournament_finished(), "Tournament should be finished at heads-up"
+
+def test_reward_calculation_edge_case_no_sharky():
+    """Test reward calculation when Player_0 doesn't exist"""
+    env = MultiTableTournamentEnv(total_players=3, max_players_per_table=3)
+    obs, info = env.reset()
+    
+    # Rename Player_0 to simulate missing Sharky
+    player_0 = next((p for p in env.all_players if p.name == "Player_0"), None)
+    if player_0:
+        player_0.name = "NotSharky"
+    
+    # Eliminate players to reach "heads-up"
+    env.all_players[0].stack = 0  # Eliminate one player
+    
+    remaining_player = next((p for p in env.all_players if p.stack > 0), None)
+    assert remaining_player is not None, "Should have a remaining player"
+    prev_stack = remaining_player.stack
+    
+    # Should not crash when calculating reward without Sharky
+    reward = env._calculate_reward(remaining_player, prev_stack)
+    
+    # Should get runner-up reward (since Sharky didn't reach heads-up)
+    runner_up_reward = env._get_placement_reward(2)
+    assert reward >= runner_up_reward, "Should get runner-up reward when Sharky not present"
+
+def test_realistic_blind_timing_with_heads_up():
+    """Test that realistic blind timing works correctly with heads-up completion"""
+    env = MultiTableTournamentEnv(
+        total_players=6, 
+        max_players_per_table=3
+    )
+    obs, info = env.reset()
+    
+    # Verify realistic blind timing is enabled
+    assert env.use_realistic_blind_timing, "Should use realistic blind timing"
+    assert env.target_hands_per_level == 10, "Should have updated target hands per level (10)"
+    
+    # Play until heads-up is reached
+    max_steps = 1000  # Prevent infinite loops
+    step_count = 0
+    
+    while not env._tournament_finished() and step_count < max_steps:
+        mask = env.legal_action_mask()
+        if any(mask):
+            legal_action = next(i for i, legal in enumerate(mask) if legal)
+            obs, reward, terminated, truncated, info = env.step(legal_action)
+            if terminated:
+                break
+        step_count += 1
+    
+    # Should reach heads-up within reasonable number of steps
+    assert step_count < max_steps, "Should reach heads-up within reasonable time"
+    assert env._tournament_finished(), "Tournament should be finished (heads-up reached)"
+
 # ====== EDGE CASE AND ROBUSTNESS TESTS ======
 
 def test_minimum_tournament_size():
@@ -1062,23 +1272,29 @@ def test_turbo_blind_structure():
     
     # Check blind structure starts correctly
     level_1 = env.blinds_schedule[0]  # Should be (10, 20, 0)
-    level_2 = env.blinds_schedule[1]  # Should be (20, 40, 1) - antes start
+    level_2 = env.blinds_schedule[1]  # Should be (20, 40, 0)
     
     assert level_1 == (10, 20, 0), f"Level 1 should be (10, 20, 0), got {level_1}"
     assert level_2 == (20, 40, 0), f"Level 2 should be (20, 40, 0), got {level_2}"
 
-    # Verify antes start at level 2 (not level 5 like before)
+    # Verify antes start at level 3 (level index 2)
     assert level_1[2] == 0, "Level 1 should have no ante"
     assert level_2[2] == 0, "Level 2 should have no antes"
+    level_3 = env.blinds_schedule[2]  # Should be (30, 60, 1) - antes start
+    assert level_3[2] == 1, "Level 3 should have antes"
 
-    # Test rapid blind progression
+    # Test rapid blind progression with realistic timing
     initial_level = env.current_blind_level
     
-    # Simulate playing 10 hands to trigger blind increase
-    env.hands_played_this_level = 10
+    # With realistic timing, need to simulate total hands across all tables
+    # 1 table * 10 target hands per level = 10 total hands needed
+    active_tables = env._get_active_tables()
+    for table in active_tables:
+        table.hands_played = 10  # Simulate 10 hands played on this table
+    
     env._increase_blinds_if_needed()
     
-    assert env.current_blind_level > initial_level, "Blinds should increase after 10 hands"
+    assert env.current_blind_level > initial_level, "Blinds should increase after 10 hands per table"
 
 
 def test_rapid_elimination_scenario_completion():

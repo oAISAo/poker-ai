@@ -2,6 +2,11 @@
 
 # Poker AI Agent Development Plan
 
+Better Blind Timing: Use actual time-based blinds instead of hand-based
+Improved Balancing: More sophisticated table balancing algorithms
+State Validation: Enhanced consistency checks (which you've already been working on)
+Robust Error Handling: Better recovery from edge cases
+
 
 Sharky has to be rewarded when reaching heads up (that's the best reward for this agent)
 Sharky has to be rewarded when reaching the Final Table.

@@ -174,7 +174,13 @@ class TestAnteInMultiTableTournament:
         
         # Force progression to level with antes
         env.current_blind_level = 2  # Level 3 with antes
-        env.hands_played_this_level = 1  # Trigger blind increase
+        
+        # With realistic timing, need to simulate total hands across all tables
+        # 2 tables * 10 target hands per level = 20 total hands needed
+        active_tables = env._get_active_tables()
+        for table in active_tables:
+            table.hands_played = 10  # Simulate 10 hands played on each table
+        
         env._increase_blinds_if_needed()
         
         # All active tables should have the same ante
